@@ -461,15 +461,28 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                                     count = archivedMeds.size,
                                     onClick = {
                                         val items = DataRepository.loadData(context).toMutableList()
-                                        val itemIndex = items.indexOfFirst { it.id == med.id }
-                                        if (itemIndex != -1) {
-                                            val restored = items[itemIndex].copy(
-                                                endDate = null,
-                                                supplyAlertShown = false
-                                            )
-                                            items[itemIndex] = restored
-                                            DataRepository.saveData(context, items)
-                                            NotificationReceiver.scheduleNotification(context, restored)
+                                        val selected = items.firstOrNull { it.id == med.id }
+                                        if (selected != null) {
+                                            val groupIds = if (selected.groupId != null) {
+                                                items.filter {
+                                                    it.type == ItemType.Medicine &&
+                                                        it.groupId == selected.groupId
+                                                }.map { it.id }.toSet()
+                                            } else {
+                                                setOf(selected.id)
+                                            }
+                                            val restoredItems = items.map { current ->
+                                                if (current.id in groupIds) {
+                                                    current.copy(
+                                                        endDate = null,
+                                                        supplyAlertShown = false
+                                                    )
+                                                } else current
+                                            }
+                                            DataRepository.saveData(context, restoredItems)
+                                            restoredItems.filter { it.id in groupIds }.forEach {
+                                                NotificationReceiver.scheduleNotification(context, it)
+                                            }
                                             archivedMeds = loadArchivedMeds()
                                             Toast.makeText(
                                                 context,

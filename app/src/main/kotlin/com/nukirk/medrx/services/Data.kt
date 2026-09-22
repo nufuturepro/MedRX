@@ -1062,13 +1062,31 @@ class MedViewModel(application: Application) : AndroidViewModel(application) {
     fun archiveItem(item: MedData) {
         val index = _items.indexOfFirst { it.id == item.id }
         if (index == -1) return
+
+        // A medicine can have one entry per dose time. Archive the complete
+        // group, not only the slot that happened to open the editor; otherwise
+        // sibling doses remain active and continue appearing/reminding.
         val original = _items[index]
-        val updated = original.copy(endDate = LocalDate.now())
-        _items[index] = updated
-        NotificationReceiver.scheduleNotification(getApplication(), updated)
-        // Cancel any shown low-supply alert keyed to the original entry ID.
-        InventoryService.cancelLowSupplyNotification(getApplication(), original)
+        val relatedIds = if (original.groupId != null) {
+            _items.filter { it.type == ItemType.Medicine && it.groupId == original.groupId }
+                .map { it.id }
+                .toSet()
+        } else {
+            setOf(original.id)
+        }
+        val archiveEnd = LocalDate.now().minusDays(1)
+
+        _items.replaceAll { current ->
+            if (current.id in relatedIds) current.copy(endDate = archiveEnd) else current
+        }
+        _items.filter { it.id in relatedIds }.forEach { archived ->
+            // Re-scheduling an ended item cancels its dose alarm; also cancel
+            // any low-supply alert keyed to every dose slot.
+            NotificationReceiver.scheduleNotification(getApplication(), archived)
+            InventoryService.cancelLowSupplyNotification(getApplication(), archived)
+        }
         saveData()
+        syncToWear()
     }
 
     fun toggleMedicine(item: MedData, date: LocalDate) {
