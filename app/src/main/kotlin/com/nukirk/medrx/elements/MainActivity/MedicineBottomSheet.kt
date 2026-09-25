@@ -55,6 +55,7 @@ import androidx.compose.material.icons.rounded.EventBusy
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Remove
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonGroup
@@ -63,7 +64,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.FilledTonalButton
@@ -120,6 +120,8 @@ import com.nukirk.medrx.services.MedData
 import com.nukirk.medrx.services.SkipReason
 import com.nukirk.medrx.services.SupplyChange
 import com.nukirk.medrx.services.SupplyChangeKind
+import com.nukirk.medrx.services.SupplyUnit
+import com.nukirk.medrx.services.labelResId
 import com.nukirk.medrx.ui.theme.GoogleSansFlex
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -133,17 +135,22 @@ import java.util.Locale
 @Composable
 fun MedicineBottomSheet(
     onDismiss: () -> Unit,
-    onConfirm: (String, String?, String?, List<LocalTime>, List<DayOfWeek>?, String?, Int?, InventoryEntry?, Int, Long?, Long?) -> Unit,
+    onConfirm: (String, String?, String?, List<LocalTime>, List<DayOfWeek>?, String?, Int?, InventoryEntry?, Int, Long?, Long?, String?, String?, Boolean, Int?, Int?) -> Unit,
     initialItem: MedData? = null,
     initialText: String = "",
     onArchive: () -> Unit = {},
-    onPreSkip: (LocalDate, SkipReason, String?) -> Unit = { _, _, _ -> }
+    onNewVersion: (LocalDate, String?, String?, InventoryEntry?) -> Unit = { _, _, _, _ -> },
+    onPreSkip: (LocalDate, SkipReason, String?) -> Unit = { _, _, _ -> },
+    onSupplyUse: (SupplyChangeKind, Int) -> Unit = { _, _ -> },
+    initialVersionDate: LocalDate = LocalDate.now()
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
     var text by remember { mutableStateOf(initialItem?.title ?: initialText) }
     var notes by remember { mutableStateOf(initialItem?.notes ?: "") }
+    var doseAmount by remember { mutableStateOf(initialItem?.doseAmount ?: "") }
+    var doseUnit by remember { mutableStateOf(initialItem?.doseUnit ?: "") }
     var nameError by remember { mutableStateOf(false) }
 
     var frequencyType by remember {
@@ -201,8 +208,18 @@ fun MedicineBottomSheet(
     var showIconPicker by remember { mutableStateOf(false) }
     var showTimePickerForIndex by remember { mutableStateOf<Int?>(null) }
     var showSaveFrequencyPopup by remember { mutableStateOf(false) }
+    var showDoseChangePrompt by remember { mutableStateOf(false) }
+    var showVersionConfirmation by remember { mutableStateOf(false) }
+    var showVersionDatePicker by remember { mutableStateOf(false) }
+    var effectiveVersionDate by remember { mutableStateOf(initialVersionDate) }
+    var saveDoseToExistingVersion by remember { mutableStateOf(false) }
+    var showSupplyUseDialog by remember { mutableStateOf<SupplyChangeKind?>(null) }
+    var supplyUseQuantity by remember { mutableStateOf("1") }
 
     var notificationType by remember { mutableIntStateOf(initialItem?.notificationType ?: 0) }
+    var isPrn by remember { mutableStateOf(initialItem?.isPrn ?: false) }
+    var prnMaxPerDay by remember { mutableStateOf(initialItem?.prnMaxPerDay?.toString() ?: "") }
+    var prnMinIntervalHours by remember { mutableStateOf(initialItem?.prnMinIntervalHours?.toString() ?: "") }
 
     // --- Supply (inventory) tracking ---
     var supplyEnabled by remember {
@@ -217,6 +234,8 @@ fun MedicineBottomSheet(
     var supplyThreshold by remember {
         mutableIntStateOf(initialItem?.supplyLowThreshold ?: 5)
     }
+    var supplyUnit by remember { mutableStateOf(initialItem?.supplyUnit ?: SupplyUnit.DOSE) }
+    var supplyUnitsPerDose by remember { mutableIntStateOf(initialItem?.supplyUnitsPerDose ?: 1) }
     // Non-null while one of the supply numbers is being typed in an
     // OutlinedTextField (steppers remain available around the field).
     var editingSupplyField by remember { mutableStateOf<String?>(null) }
@@ -258,7 +277,9 @@ fun MedicineBottomSheet(
     fun inventoryEntry(): InventoryEntry? = if (supplyEnabled) InventoryEntry(
         dosesLeft = supplyLeft,
         dosesPerRefill = supplyRefill,
-        lowThreshold = supplyThreshold
+        lowThreshold = supplyThreshold,
+        unit = supplyUnit,
+        unitsPerDose = supplyUnitsPerDose
     ) else null
 
     // Bring up the keyboard as soon as a supply value is tapped for typing.
@@ -317,6 +338,109 @@ fun MedicineBottomSheet(
         )
     }
 
+    if (showDoseChangePrompt && initialItem != null) {
+        AlertDialog(
+            onDismissRequest = { showDoseChangePrompt = false },
+            title = { Text(stringResource(R.string.dose_change_prompt_title)) },
+            text = { Text(stringResource(R.string.dose_change_prompt_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDoseChangePrompt = false
+                    showVersionConfirmation = true
+                }) { Text(stringResource(R.string.dose_change_start_version)) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { showDoseChangePrompt = false }) {
+                        Text(stringResource(R.string.cancel_action))
+                    }
+                    TextButton(onClick = {
+                        showDoseChangePrompt = false
+                        saveDoseToExistingVersion = true
+                        showSaveFrequencyPopup = true
+                    }) { Text(stringResource(R.string.dose_change_save_existing)) }
+                }
+            }
+        )
+    }
+
+    if (showVersionDatePicker) {
+        val picker = rememberDatePickerState(
+            initialSelectedDateMillis = effectiveVersionDate.toEpochDay() * 86400000L
+        )
+        DatePickerDialog(
+            onDismissRequest = { showVersionDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    picker.selectedDateMillis?.let { effectiveVersionDate = LocalDate.ofEpochDay(it / 86400000L) }
+                    showVersionDatePicker = false
+                    if (initialItem != null) showVersionConfirmation = true
+                }) { Text(stringResource(R.string.ok_action)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showVersionDatePicker = false }) { Text(stringResource(R.string.cancel_action)) }
+            }
+        ) { DatePicker(state = picker) }
+    }
+
+    if (showVersionConfirmation && initialItem != null) {
+        AlertDialog(
+            onDismissRequest = { showVersionConfirmation = false },
+            title = { Text(stringResource(R.string.version_confirm_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.version_confirm_message))
+                    Text(stringResource(R.string.version_old_dose, listOfNotNull(initialItem.doseAmount, initialItem.doseUnit).joinToString(" ").ifBlank { "—" }))
+                    Text(stringResource(R.string.version_new_dose, listOfNotNull(doseAmount.takeIf { it.isNotBlank() }, doseUnit.takeIf { it.isNotBlank() }).joinToString(" ").ifBlank { "—" }))
+                    TextButton(onClick = { showVersionDatePicker = true }) {
+                        Text(stringResource(R.string.version_effective_date) + ": " + effectiveVersionDate.toString())
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !effectiveVersionDate.isBefore(initialItem.creationDate),
+                    onClick = {
+                        showVersionConfirmation = false
+                        onNewVersion(effectiveVersionDate, doseAmount.takeIf { it.isNotBlank() }, doseUnit.takeIf { it.isNotBlank() }, inventoryEntry())
+                    }
+                ) { Text(stringResource(R.string.version_confirm_action)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showVersionConfirmation = false }) { Text(stringResource(R.string.cancel_action)) }
+            }
+        )
+    }
+
+    if (showSupplyUseDialog != null) {
+        val kind = showSupplyUseDialog!!
+        AlertDialog(
+            onDismissRequest = { showSupplyUseDialog = null },
+            title = { Text(stringResource(if (kind == SupplyChangeKind.PRIMING) R.string.supply_log_priming else R.string.supply_log_waste)) },
+            text = {
+                OutlinedTextField(
+                    value = supplyUseQuantity,
+                    onValueChange = { supplyUseQuantity = it.filter(Char::isDigit).take(5) },
+                    label = { Text(stringResource(R.string.supply_use_quantity, stringResource(supplyUnit.labelResId()))) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val qty = supplyUseQuantity.toIntOrNull()
+                    if (qty != null && qty > 0 && qty <= supplyLeft) {
+                        onSupplyUse(kind, qty)
+                        supplyLeft -= qty
+                        supplyUseQuantity = "1"
+                        showSupplyUseDialog = null
+                    }
+                }, enabled = (supplyUseQuantity.toIntOrNull() ?: 0) in 1..supplyLeft) { Text(stringResource(R.string.ok_action)) }
+            },
+            dismissButton = { TextButton(onClick = { showSupplyUseDialog = null }) { Text(stringResource(R.string.cancel_action)) } }
+        )
+    }
+
     if (showSaveFrequencyPopup) {
         SaveFrequencyPopup(
             onDismiss = { showSaveFrequencyPopup = false },
@@ -345,7 +469,12 @@ fun MedicineBottomSheet(
                             inventoryEntry(),
                             notificationType,
                             start,
-                            end
+                            end,
+                            doseAmount.takeIf { it.isNotBlank() },
+                            doseUnit.takeIf { it.isNotBlank() },
+                            isPrn,
+                            prnMaxPerDay.toIntOrNull(),
+                            prnMinIntervalHours.toIntOrNull()
                         )
                     }
                 }
@@ -524,6 +653,76 @@ fun MedicineBottomSheet(
                 item { Spacer(modifier = Modifier.height(16.dp)) }
 
                 item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = doseAmount,
+                            onValueChange = { doseAmount = it.filter { c -> c.isDigit() || c == '.' } },
+                            modifier = Modifier.weight(1f),
+                            label = { Text(stringResource(R.string.dose_amount_label)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                        )
+                        OutlinedTextField(
+                            value = doseUnit,
+                            onValueChange = { doseUnit = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text(stringResource(R.string.dose_unit_label)) },
+                            singleLine = true
+                        )
+                    }
+                }
+
+                item {
+                    val itemColors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                    SegmentedListItem(
+                        onClick = { isPrn = !isPrn },
+                        colors = itemColors,
+                        shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
+                        modifier = Modifier.clip(RoundedCornerShape(20.dp)),
+                        trailingContent = {
+                            Switch(checked = isPrn, onCheckedChange = { isPrn = it })
+                        },
+                        content = {
+                            Column {
+                                Text(stringResource(R.string.as_needed_switch_label), style = MaterialTheme.typography.bodyLarge, fontFamily = GoogleSansFlex)
+                                Text(stringResource(R.string.as_needed_switch_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    )
+                }
+
+                if (isPrn) {
+                    item { Spacer(modifier = Modifier.height(8.dp)) }
+                    item {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedTextField(
+                                value = prnMaxPerDay,
+                                onValueChange = { prnMaxPerDay = it.filter(Char::isDigit).take(2) },
+                                modifier = Modifier.weight(1f),
+                                label = { Text(stringResource(R.string.prn_max_per_day_label)) },
+                                placeholder = { Text(stringResource(R.string.prn_max_per_day_hint)) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                            OutlinedTextField(
+                                value = prnMinIntervalHours,
+                                onValueChange = { prnMinIntervalHours = it.filter(Char::isDigit).take(2) },
+                                modifier = Modifier.weight(1f),
+                                label = { Text(stringResource(R.string.prn_min_interval_label)) },
+                                placeholder = { Text(stringResource(R.string.prn_min_interval_hint)) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                        }
+                    }
+                }
+
+                item { Spacer(modifier = Modifier.height(16.dp)) }
+
+                item {
                     val itemColors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
                     SegmentedListItem(
                         onClick = { supplyEnabled = !supplyEnabled },
@@ -548,6 +747,53 @@ fun MedicineBottomSheet(
                 }
 
                 if (supplyEnabled) {
+                    item {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(stringResource(R.string.supply_unit_label), style = MaterialTheme.typography.labelMedium)
+                        val supplyUnitOptions = listOf(
+                            SupplyUnit.DOSE to stringResource(R.string.supply_unit_dose),
+                            SupplyUnit.TABLET to stringResource(R.string.supply_unit_tablet),
+                            SupplyUnit.CAPSULE to stringResource(R.string.supply_unit_capsule),
+                            SupplyUnit.ML to stringResource(R.string.supply_unit_ml),
+                            SupplyUnit.SPRAY to stringResource(R.string.supply_unit_spray),
+                            SupplyUnit.PUFF to stringResource(R.string.supply_unit_puff)
+                        )
+                        OutlinedSingleSelectButtonGroup(
+                            options = supplyUnitOptions.map { it.second },
+                            selectedIndex = supplyUnitOptions.indexOfFirst { it.first == supplyUnit }.coerceAtLeast(0),
+                            onOptionSelected = { supplyUnit = supplyUnitOptions[it].first }
+                        )
+                        if (supplyUnit == SupplyUnit.SPRAY || supplyUnit == SupplyUnit.PUFF) {
+                            Text(stringResource(R.string.supply_estimated_label), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        SegmentedListItem(
+                            onClick = {},
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                            shapes = ListItemDefaults.segmentedShapes(index = 0, count = 1),
+                            trailingContent = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { if (supplyUnitsPerDose > 1) supplyUnitsPerDose-- }) { Icon(Icons.Rounded.Remove, contentDescription = null) }
+                                    Text(supplyUnitsPerDose.toString(), modifier = Modifier.padding(horizontal = 12.dp))
+                                    IconButton(onClick = { if (supplyUnitsPerDose < 999) supplyUnitsPerDose++ }) { Icon(Icons.Rounded.Add, contentDescription = null) }
+                                }
+                            },
+                            content = { Text(stringResource(R.string.supply_units_per_dose)) }
+                        )
+                        if (initialItem != null && (supplyUnit == SupplyUnit.SPRAY || supplyUnit == SupplyUnit.PUFF)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = { showSupplyUseDialog = SupplyChangeKind.PRIMING }
+                                ) {
+                                    Text(stringResource(R.string.supply_log_priming))
+                                }
+                                OutlinedButton(
+                                    onClick = { showSupplyUseDialog = SupplyChangeKind.WASTE }
+                                ) {
+                                    Text(stringResource(R.string.supply_log_waste))
+                                }
+                            }
+                        }
+                    }
                     item { Spacer(modifier = Modifier.height(16.dp)) }
 
                     item {
@@ -559,7 +805,8 @@ fun MedicineBottomSheet(
                             SegmentedListItem(
                                 onClick = {},
                                 colors = itemColors,
-                                shapes = ListItemDefaults.segmentedShapes(index = 0, count = 3),                                    trailingContent = {
+                                shapes = ListItemDefaults.segmentedShapes(index = 0, count = 3),
+                                trailingContent = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         IconButton(onClick = {
                                             if (editingSupplyField == "left") commitSupplyEdit("left")
@@ -608,7 +855,7 @@ fun MedicineBottomSheet(
                                 content = {
                                     Column {
                                         Text(
-                                            text = stringResource(R.string.supply_doses_left),
+                                            text = stringResource(R.string.supply_doses_left, stringResource(supplyUnit.labelResId())),
                                             style = MaterialTheme.typography.bodyLarge,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             fontFamily = GoogleSansFlex
@@ -675,7 +922,7 @@ fun MedicineBottomSheet(
                                 },
                                 content = {
                                     Text(
-                                        text = stringResource(R.string.supply_refill_size),
+                                        text = stringResource(R.string.supply_refill_size, stringResource(supplyUnit.labelResId())),
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         fontFamily = GoogleSansFlex
@@ -746,7 +993,8 @@ fun MedicineBottomSheet(
                     }
                 }
 
-                if (supplyEnabled && initialItem != null && initialItem.supplyLedger.isNotEmpty()) {
+                if (!isPrn) {
+                                if (supplyEnabled && initialItem != null && initialItem.supplyLedger.isNotEmpty()) {
                     item { Spacer(modifier = Modifier.height(16.dp)) }
 
                     item {
@@ -1036,6 +1284,8 @@ fun MedicineBottomSheet(
                     }
                 }
 
+                }
+
                 // Skip-in-advance lives at the bottom of the editor, just
                 // above the action row, so it's reachable without scrolling
                 // past the supply section.
@@ -1091,6 +1341,28 @@ fun MedicineBottomSheet(
 
                     if (initialItem != null && initialItem.type == ItemType.Medicine) {
                         OutlinedButton(
+                            onClick = {
+                                effectiveVersionDate = maxOf(initialVersionDate, initialItem.creationDate.plusDays(1))
+                                showVersionDatePicker = true
+                            },
+                            modifier = Modifier.height(50.dp),
+                            shape = RoundedCornerShape(50),
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            Icon(
+                                Icons.Rounded.Archive,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                stringResource(R.string.start_new_version),
+                                fontFamily = GoogleSansFlex,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1
+                            )
+                        }
+                        OutlinedButton(
                             onClick = { onArchive() },
                             modifier = Modifier.height(50.dp),
                             shape = RoundedCornerShape(50),
@@ -1136,6 +1408,10 @@ fun MedicineBottomSheet(
 
                                         text != initialItem.title ||
                                                 notes != (initialItem.notes ?: "") ||
+                                                doseAmount != (initialItem.doseAmount ?: "") ||
+                                                doseUnit != (initialItem.doseUnit ?: "") ||
+                                                supplyUnit != initialItem.supplyUnit ||
+                                                supplyUnitsPerDose != initialItem.supplyUnitsPerDose ||
                                                 selectedIconName != (initialItem.iconName
                                             ?: "MedicalServices") ||
                                                 selectedColor != (initialItem.colorCode
@@ -1146,6 +1422,9 @@ fun MedicineBottomSheet(
                                                 (frequencyType == 1 && selectedDays != initialDaysSet) ||
                                                 (frequencyType == 2 && currentGap != (initialItem.intervalGap
                                                     ?: 2)) ||
+                                                isPrn != initialItem.isPrn ||
+                                                prnMaxPerDay != (initialItem.prnMaxPerDay?.toString() ?: "") ||
+                                                prnMinIntervalHours != (initialItem.prnMinIntervalHours?.toString() ?: "") ||
                                                 supplyEnabled != (initialItem.supplyDosesLeft != null) ||
                                                 (supplyEnabled && (supplyLeft != initialItem.supplyDosesLeft ||
                                                         supplyRefill != (initialItem.supplyDosesPerRefill
@@ -1155,7 +1434,47 @@ fun MedicineBottomSheet(
                                                 editingSupplyField != null
                                     }
 
-                                    if (isModified) {
+                                    val doseChanged =
+                                        doseAmount != (initialItem.doseAmount ?: "") ||
+                                                doseUnit != (initialItem.doseUnit ?: "")
+                                    if (!isPrn && isModified && doseChanged && !saveDoseToExistingVersion) {
+                                        effectiveVersionDate = maxOf(
+                                            initialVersionDate,
+                                            initialItem.creationDate.plusDays(1)
+                                        )
+                                        showDoseChangePrompt = true
+                                    } else if (isPrn && isModified) {
+                                        // As-needed meds have no schedule to split, so apply
+                                        // the field edit directly across the group instead of
+                                        // opening the single-occurrence / range picker.
+                                        scope.launch { sheetState.hide() }.invokeOnCompletion {
+                                            if (!sheetState.isVisible) {
+                                                val days = if (frequencyType == 1) selectedDays.toList() else null
+                                                val gap = if (frequencyType == 2) {
+                                                    val base = intervalDays.toIntOrNull() ?: 2
+                                                    when (intervalUnit) { 1 -> base * 7; 2 -> base * 30; else -> base }
+                                                } else null
+                                                onConfirm(
+                                                    text,
+                                                    selectedIconName,
+                                                    selectedColor,
+                                                    selectedTimes,
+                                                    days,
+                                                    notes.takeIf { it.isNotBlank() },
+                                                    gap,
+                                                    inventoryEntry(),
+                                                    notificationType,
+                                                    null,
+                                                    null,
+                                                    doseAmount.takeIf { it.isNotBlank() },
+                                                    doseUnit.takeIf { it.isNotBlank() },
+                                                    isPrn,
+                                                    prnMaxPerDay.toIntOrNull(),
+                                                    prnMinIntervalHours.toIntOrNull()
+                                                )
+                                            }
+                                        }
+                                    } else if (isModified) {
                                         showSaveFrequencyPopup = true
                                     } else {
                                         scope.launch { sheetState.hide() }.invokeOnCompletion {
@@ -1182,7 +1501,12 @@ fun MedicineBottomSheet(
                                                     inventoryEntry(),
                                                     notificationType,
                                                     null,
-                                                    null
+                                                    null,
+                                                    doseAmount.takeIf { it.isNotBlank() },
+                                                    doseUnit.takeIf { it.isNotBlank() },
+                                                    isPrn,
+                                                    prnMaxPerDay.toIntOrNull(),
+                                                    prnMinIntervalHours.toIntOrNull()
                                                 )
                                             }
                                         }
@@ -1212,7 +1536,12 @@ fun MedicineBottomSheet(
                                                 inventoryEntry(),
                                                 notificationType,
                                                 null,
-                                                null
+                                                null,
+                                                doseAmount.takeIf { it.isNotBlank() },
+                                                doseUnit.takeIf { it.isNotBlank() },
+                                                isPrn,
+                                                prnMaxPerDay.toIntOrNull(),
+                                                prnMinIntervalHours.toIntOrNull()
                                             )
                                         }
                                     }
@@ -1309,6 +1638,8 @@ fun SupplyLedgerCard(ledger: List<SupplyChange>) {
                         SupplyChangeKind.CORRECTION -> R.string.ledger_kind_correction
                         SupplyChangeKind.REFILL -> R.string.ledger_kind_refill
                         SupplyChangeKind.INITIAL -> R.string.ledger_kind_initial
+                        SupplyChangeKind.PRIMING -> R.string.ledger_kind_priming
+                        SupplyChangeKind.WASTE -> R.string.ledger_kind_waste
                     }
                 )
                 Row(
@@ -1318,7 +1649,7 @@ fun SupplyLedgerCard(ledger: List<SupplyChange>) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "$kindLabel  $deltaText → ${change.balanceAfter}",
+                        text = "$kindLabel  $deltaText ${change.unit.name.lowercase()} → ${change.balanceAfter}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontFamily = GoogleSansFlex,
                         color = MaterialTheme.colorScheme.onSurface,

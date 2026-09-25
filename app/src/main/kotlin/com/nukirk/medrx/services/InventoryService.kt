@@ -47,12 +47,36 @@ object InventoryService {
         delta: Int,
         balanceAfter: Int,
         date: LocalDate = LocalDate.now(),
-        time: LocalTime = LocalTime.now()
+        time: LocalTime = LocalTime.now(),
+        unit: SupplyUnit = item.supplyUnit
     ): MedData = item.copy(
         supplyLedger = (
-                item.supplyLedger + SupplyChange(kind, date, time, delta, balanceAfter)
-                ).takeLast(LEDGER_LIMIT)
+            item.supplyLedger + SupplyChange(kind, date, time, delta, balanceAfter, unit)
+        ).takeLast(LEDGER_LIMIT)
     )
+
+    /** Consume stock without recording an adherence/taken event (priming or waste). */
+    fun applySupplyUse(
+        context: Context?,
+        item: MedData,
+        kind: SupplyChangeKind,
+        quantity: Int,
+        date: LocalDate = LocalDate.now(),
+        time: LocalTime = LocalTime.now()
+    ): MedData {
+        require(kind == SupplyChangeKind.PRIMING || kind == SupplyChangeKind.WASTE)
+        require(quantity > 0)
+        val balance = item.supplyDosesLeft ?: return item
+        if (quantity > balance) return item
+        if (kind == SupplyChangeKind.PRIMING && item.supplyUnit != SupplyUnit.SPRAY && item.supplyUnit != SupplyUnit.PUFF) return item
+        val newBalance = balance - quantity
+        val isEstimatedUnit = item.supplyUnit == SupplyUnit.SPRAY || item.supplyUnit == SupplyUnit.PUFF
+        val updated = evaluateItem(
+            context,
+            item.copy(supplyDosesLeft = newBalance, supplyEstimated = item.supplyEstimated || isEstimatedUnit)
+        )
+        return logSupplyChange(updated, kind, -quantity, newBalance, date, time, item.supplyUnit)
+    }
 
     private fun alertId(item: MedData): Int = ALERT_ID_BASE + (item.id % 100000).toInt()
 
@@ -62,7 +86,10 @@ object InventoryService {
      */
     fun applyInventoryChange(context: Context?, item: MedData, isTaken: Boolean): MedData {
         val left = item.supplyDosesLeft ?: return item
-        val updated = item.copy(supplyDosesLeft = (left + if (isTaken) -1 else 1).coerceAtLeast(0))
+        val units = item.supplyUnitsPerDose.coerceAtLeast(1)
+        val updated = item.copy(
+            supplyDosesLeft = (left + if (isTaken) -units else units).coerceAtLeast(0)
+        )
         return evaluateItem(context, updated)
     }
 
@@ -92,10 +119,11 @@ object InventoryService {
                 logSupplyChange(
                     updated,
                     SupplyChangeKind.TAKEN,
-                    delta = -1,
+                    delta = if (item.supplyDosesLeft == null) 0 else -item.supplyUnitsPerDose.coerceAtLeast(1),
                     balanceAfter = updated.supplyDosesLeft ?: 0,
                     date = date,
-                    time = takenAt
+                    time = takenAt,
+                    unit = updated.supplyUnit
                 )
             }
             !alreadyLogged -> item
@@ -108,9 +136,10 @@ object InventoryService {
                 logSupplyChange(
                     updated,
                     SupplyChangeKind.REFUND,
-                    delta = +1,
+                    delta = if (item.supplyDosesLeft == null) 0 else item.supplyUnitsPerDose.coerceAtLeast(1),
                     balanceAfter = updated.supplyDosesLeft ?: 0,
-                    date = date
+                    date = date,
+                    unit = updated.supplyUnit
                 )
             }
         }
@@ -163,10 +192,11 @@ object InventoryService {
 
     private fun postLowSupplyNotification(context: Context, item: MedData) {
         val remaining = item.supplyDosesPerRefill ?: 0
+        val unitName = context.getString(item.supplyUnit.labelResId())
         val text = if (remaining > 0) {
-            context.getString(R.string.inventory_low_desc_refill, item.supplyDosesLeft ?: 0, remaining)
+            context.getString(R.string.inventory_low_desc_refill, item.supplyDosesLeft ?: 0, unitName, remaining, unitName)
         } else {
-            context.getString(R.string.inventory_low_desc, item.supplyDosesLeft ?: 0)
+            context.getString(R.string.inventory_low_desc, item.supplyDosesLeft ?: 0, unitName)
         }
 
         val contentIntent = PendingIntent.getActivity(
@@ -195,6 +225,15 @@ object InventoryService {
     fun cancelLowSupplyNotification(context: Context, item: MedData) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(alertId(item))
+    }
+
+    fun logPrnUsage(context: Context?, item: MedData, quantity: Int = 1, date: LocalDate = LocalDate.now(), time: LocalTime = LocalTime.now()): MedData {
+        val units = item.supplyUnitsPerDose.coerceAtLeast(1) * quantity.coerceAtLeast(1)
+        val left = item.supplyDosesLeft ?: return item.copy(prnUsages = item.prnUsages + PrnUse(date, time, quantity.coerceAtLeast(1)))
+        val newLeft = (left - units).coerceAtLeast(0)
+        var updated = item.copy(supplyDosesLeft = newLeft, prnUsages = item.prnUsages + PrnUse(date, time, quantity.coerceAtLeast(1)))
+        updated = logSupplyChange(updated, SupplyChangeKind.TAKEN, delta = -units, balanceAfter = newLeft, date = date, time = time, unit = updated.supplyUnit)
+        return evaluateItem(context, updated)
     }
 
     fun createNotificationChannel(context: Context) {

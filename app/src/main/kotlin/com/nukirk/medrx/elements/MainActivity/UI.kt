@@ -88,6 +88,7 @@ import com.nukirk.medrx.AVAILABLE_ICONS
 import com.nukirk.medrx.ItemType
 import com.nukirk.medrx.R
 import com.nukirk.medrx.services.MedData
+import com.nukirk.medrx.services.labelResId
 import com.nukirk.medrx.ui.theme.GoogleSansFlex
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -285,6 +286,17 @@ fun MedDataCard(
             },
             supportingContent = {
                 Column {
+                    if (isMedicine && (!item.doseAmount.isNullOrBlank() || !item.doseUnit.isNullOrBlank())) {
+                        Text(
+                            text = listOfNotNull(item.doseAmount, item.doseUnit).joinToString(" "),
+                            fontFamily = GoogleSansFlex,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = cardContentColor.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false
+                        )
+                    }
                     if (isMedicine && !item.frequencyLabel.isNullOrBlank()) {
                         val labelText =
                             if (item.frequencyLabel.equals("Specific days", ignoreCase = true)) {
@@ -318,8 +330,9 @@ fun MedDataCard(
                             Text(
                                 text = stringResource(
                                     R.string.supply_badge_format,
-                                    item.supplyDosesLeft
-                                ),
+                                    item.supplyDosesLeft,
+                                    stringResource(item.supplyUnit.labelResId())
+                                ) + if (item.supplyEstimated) " ≈" else "",
                                 fontFamily = GoogleSansFlex,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = if (low) FontWeight.SemiBold else FontWeight.Normal,
@@ -482,7 +495,8 @@ fun MedDataCard(
                                             context,
                                             context.getString(
                                                 R.string.tap_again_to_refill,
-                                                item.supplyDosesPerRefill
+                                                item.supplyDosesPerRefill,
+                                                context.getString(item.supplyUnit.labelResId())
                                             ),
                                             Toast.LENGTH_SHORT
                                         ).show()

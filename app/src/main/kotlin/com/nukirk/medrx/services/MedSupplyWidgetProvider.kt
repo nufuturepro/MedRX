@@ -80,7 +80,11 @@ class MedSupplyWidgetProvider : AppWidgetProvider() {
                 views.setTextViewText(R.id.widget_title, lowest.title)
                 views.setTextViewText(
                     R.id.widget_count,
-                    context.getString(R.string.supply_badge_format, left)
+                    context.getString(
+                        R.string.supply_badge_format,
+                        left,
+                        context.getString(lowest.supplyUnit.labelResId())
+                    ) + if (lowest.supplyEstimated) " ≈" else ""
                 )
                 views.setTextColor(
                     R.id.widget_count,

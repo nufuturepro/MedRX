@@ -62,11 +62,14 @@ jobs:
             **Med Rx is a community fork of [Med by FeDeveloper95](https://github.com/FeDeveloper95/Med) (Apache 2.0), maintained by nukirk.**
 
             ## What's new
-            - Log symptoms with severity (mild / moderate / severe) and an editable date and time
-            - Skip and refill actions moved beside the taken circle on med cards
-            - Symptom logging translated into German, French, Spanish, Portuguese, and Russian
+            - **As-needed (PRN) medications**: log uses on demand with an optional per-day cap and minimum spacing between doses — PRNs stay out of schedules, alarms, and missed-dose stats
+            - The "As needed" tray now lives at the bottom of the home list, under your scheduled meds
+            - PRN usage history survives backup/CSV export and import round-trips
+            - PRN strings translated into German, French, Spanish, Portuguese, and Russian
 
             ## Fork features
+            - Symptom logging with severity (mild / moderate / severe) and an editable date and time
+            - Skip and refill actions beside the taken circle on med cards
             - Dose skipping with 8 clinical reasons + optional note
             - Pre-skip future doses (travel, fasting, procedures)
             - Supply ledger with full stock-change traceability
@@ -78,7 +81,7 @@ jobs:
             - Download **MedRx-…-phone.apk** for your phone
             - Download **MedRx-…-wear.apk** for Wear OS (install on the watch)
             - Minimum Android 8.0 (API 26); watch requires Wear OS 3+
-            - Updating from Med RX 2.1.0-fork.1? Install straight over it — same app, new name, all data stays.
+            - Updating from Med Rx 2.2.0-fork.1 or earlier? Install straight over it — same app, all data stays.
             - Coming from the original Med app? Install alongside — your data migrates via in-app backup/restore or CSV export/import.
           files: |
             app/build/outputs/apk/release/*.apk
@@ -111,7 +114,7 @@ jobs:
 
           **Med Rx is a community fork of [Med by FeDeveloper95](https://github.com/FeDeveloper95/Med) (Apache 2.0).**
 
-          New in this build: symptom logging with severity and editable date/time, and the skip/refill actions moved beside the taken circle on med cards. The full fork feature set (dose skipping with clinical reasons, pre-skip planning, the supply ledger, the skipped-dose doctor report, the Android 14 dose-reduction crash fix) is unchanged. Details are in the release notes.
+          New in this build: as-needed (PRN) medications — log doses on demand with per-day caps and minimum spacing, no alarms and no missed-dose guilt — plus the as-needed tray moved to the bottom of the home list. The full fork feature set (dose skipping with clinical reasons, pre-skip planning, the supply ledger, symptom logging with severity, the skipped-dose doctor report, the Android 14 dose-reduction crash fix) is unchanged. Details are in the release notes.
 
           Questions or problems? Open an issue, or ask here in Discussions — every release gets a thread like this one.
           EOF

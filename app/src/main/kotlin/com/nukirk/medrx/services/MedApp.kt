@@ -9,6 +9,9 @@ package com.nukirk.medrx.services
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
@@ -107,6 +110,7 @@ import com.nukirk.medrx.elements.MainActivity.EventBottomSheet
 import com.nukirk.medrx.elements.MainActivity.SymptomBottomSheet
 import com.nukirk.medrx.elements.MainActivity.IllnessesBottomSheet
 import com.nukirk.medrx.elements.MainActivity.MainFAB
+import com.nukirk.medrx.elements.MainActivity.AsNeededTray
 import com.nukirk.medrx.elements.MainActivity.MedDataCard
 import com.nukirk.medrx.elements.MainActivity.MedSnackbarHost
 import com.nukirk.medrx.elements.MainActivity.MedicineBottomSheet
@@ -507,6 +511,7 @@ fun MedApp(
                                                     }
 
                                                     ItemType.Medicine -> {
+                                                        if (item.isPrn) false else {
                                                         val isAfterStart =
                                                             !pageDate.isBefore(item.creationDate)
                                                         val isBeforeEnd =
@@ -522,10 +527,15 @@ fun MedApp(
                                                                 item.creationDate,
                                                                 pageDate
                                                             ) % item.intervalGap == 0L
-                                                        isAfterStart && isBeforeEnd && isCorrectDay && isCorrectGap
+                                                            isAfterStart && isBeforeEnd && isCorrectDay && isCorrectGap
+                                                        }
                                                     }
                                                 }
                                             }
+
+                                            val prnShelf: List<MedData> = viewModel.items
+                                                .filter { it.type == ItemType.Medicine && it.isPrn }
+                                                .sortedWith(compareBy<MedData> { viewModel.isPrnActiveOn(it, pageDate).not() }.thenBy { it.title.lowercase() }.thenBy { it.creationTime })
 
                                             val illnesses =
                                                 pageItems.filter { it.type == ItemType.Illness }
@@ -900,6 +910,18 @@ fun MedApp(
                                                                     }
                                                                 }
                                                             }
+                                                            if (prnShelf.isNotEmpty()) {
+                                                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                                                    AsNeededTray(
+                                                                        items = prnShelf,
+                                                                        pageDate = pageDate,
+                                                                        activeOnPage = { med -> viewModel.isPrnActiveOn(med, pageDate) },
+                                                                        onLog = { med -> viewModel.logPrnUse(med, pageDate, LocalTime.now(), 1) },
+                                                                        onClick = { med -> if (!med.notes.isNullOrBlank()) noteToShow = med.notes },
+                                                                        onLongClick = { med -> editingItem = med }
+                                                                    )
+                                                                }
+                                                            }
                                                             item(span = { GridItemSpan(maxLineSpan) }) {
                                                                 Spacer(
                                                                     modifier = Modifier.height(100.dp)
@@ -1177,6 +1199,18 @@ fun MedApp(
                                                                     }
                                                                 }
                                                             }
+                                                            if (prnShelf.isNotEmpty()) {
+                                                                item {
+                                                                    AsNeededTray(
+                                                                        items = prnShelf,
+                                                                        pageDate = pageDate,
+                                                                        activeOnPage = { med -> viewModel.isPrnActiveOn(med, pageDate) },
+                                                                        onLog = { med -> viewModel.logPrnUse(med, pageDate, LocalTime.now(), 1) },
+                                                                        onClick = { med -> if (!med.notes.isNullOrBlank()) noteToShow = med.notes },
+                                                                        onLongClick = { med -> editingItem = med }
+                                                                    )
+                                                                }
+                                                            }
                                                             item {
                                                                 Spacer(
                                                                     modifier = Modifier.height(
@@ -1264,7 +1298,7 @@ fun MedApp(
             if (isMed) {
                 MedicineBottomSheet(
                     onDismiss = { editingItem = null },
-                    onConfirm = { title, iconName, colorCode, times, days, notes, intervalGap, supply, notificationType, rangeStart, rangeEnd ->
+                    onConfirm = { title, iconName, colorCode, times, days, notes, intervalGap, supply, notificationType, rangeStart, rangeEnd, doseAmount, doseUnit, isPrn, prnMax, prnMin ->
                         viewModel.updateItem(
                             itemToEdit,
                             title,
@@ -1277,7 +1311,12 @@ fun MedApp(
                             notificationType,
                             rangeStart,
                             rangeEnd,
-                            supply
+                            supply,
+                            doseAmount = doseAmount,
+                            doseUnit = doseUnit,
+                            isPrn = isPrn,
+                            prnMaxPerDay = prnMax,
+                            prnMinIntervalHours = prnMin
                         )
                         editingItem = null
                     },
@@ -1356,7 +1395,7 @@ fun MedApp(
         if (useBottomSheet) {
             MedicineBottomSheet(
                 onDismiss = { showMedicineDialog = false },
-                onConfirm = { title, iconName, colorCode, times, days, notes, intervalGap, supply, notificationType, rangeStart, rangeEnd ->
+                onConfirm = { title, iconName, colorCode, times, days, notes, intervalGap, supply, notificationType, rangeStart, rangeEnd, doseAmount, doseUnit, isPrn, prnMax, prnMin ->
                     viewModel.addItem(
                         ItemType.Medicine,
                         title,
@@ -1366,7 +1405,12 @@ fun MedApp(
                         days,
                         notes = notes,
                         intervalGap = intervalGap,
-                        notificationType = notificationType
+                        notificationType = notificationType,
+                        doseAmount = doseAmount,
+                        doseUnit = doseUnit,
+                        isPrn = isPrn ?: false,
+                        prnMaxPerDay = prnMax,
+                        prnMinIntervalHours = prnMin
                     )
                     viewModel.setSupplyOnNewestGroup(title, supply)
                     showMedicineDialog = false

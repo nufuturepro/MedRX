@@ -1,0 +1,8 @@
+🆕 As-Needed (PRN) Medications 🆕
+Log PRN uses on demand — no schedule, no alarms, no missed-dose stats
+Optional daily cap and minimum hours between doses
+"As needed" tray moved to the bottom of the home list, under scheduled meds
+PRN history survives backup and CSV export/import round-trips
+Translated into German 🇩🇪, French 🇫🇷, Spanish 🇪🇸, Portuguese 🇵🇹, and Russian 🇷🇺
+
+Fork features unchanged: dose skipping with clinical reasons, pre-skip planning, supply ledger with full traceability, symptom logging with severity, skipped-dose doctor report.

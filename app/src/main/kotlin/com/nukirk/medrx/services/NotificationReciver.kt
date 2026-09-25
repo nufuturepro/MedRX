@@ -72,6 +72,7 @@ class NotificationReceiver : BroadcastReceiver() {
 
         fun scheduleNotification(context: Context, item: MedData) {
             if (item.type != ItemType.Medicine) return
+            if (item.isPrn) return
 
             val prefs = context.getSharedPreferences("med_settings", Context.MODE_PRIVATE)
             val globalShowNotif = prefs.getBoolean(PREF_SHOW_NOTIFICATIONS, true)
@@ -128,6 +129,7 @@ class NotificationReceiver : BroadcastReceiver() {
         }
 
         private fun getNextOccurrence(item: MedData): LocalDateTime? {
+            if (item.isPrn) return null
             var date = LocalDate.now()
             val now = LocalTime.now()
 
@@ -147,6 +149,7 @@ class NotificationReceiver : BroadcastReceiver() {
         }
 
         private fun isValidDate(item: MedData, date: LocalDate): Boolean {
+            if (item.isPrn) return false
             if (date.isBefore(item.creationDate)) return false
             if (item.endDate != null && date.isAfter(item.endDate)) return false
             if (!item.recurrenceDays.isNullOrEmpty() && !item.recurrenceDays.contains(date.dayOfWeek)) return false

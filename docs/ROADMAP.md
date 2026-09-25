@@ -1,79 +1,33 @@
 # Med Rx roadmap
 
-Living document — update it when the plan changes, don't treat it as a promise
-calendar.
+Living document — update it when the plan changes; it is not a promise calendar.
 
-## Identity: "Med RX" → "Med Rx" — SHIPPED in 2.2.0-fork.1
+## Identity: “Med RX” → “Med Rx” — SHIPPED in 2.2.0-fork.1
 
-The brand is now written **Med Rx** — same name, lowercase x. No rebrand
-narrative accompanies it; user-facing copy simply says "Med Rx".
-
-- **Launcher name is "Med Rx"** on phone and Wear, in every language (the
-  brand is untranslated by design).
-- **Package id stays `com.nukirk.medrx`**: changing the applicationId would
-  orphan every existing install — updates would stop matching, and moving data
-  would require uninstall + restore. The id is identity plumbing, not branding.
+The brand is written **Med Rx** (lowercase x); no rebrand narrative accompanies it. Launcher name is localized consistently on phone and Wear. The package id remains `com.nukirk.medrx` so existing installations can update without a package/data migration.
 
 ## Translations: Weblate (planned)
 
-Volunteer translation moves to [Weblate](https://weblate.org) once community
-translation demand appears (or before the next string-heavy feature). Setup,
-when scheduled:
+Set up volunteer translation on Weblate when community demand appears or before the next string-heavy feature. Planned work: contributor instructions and tone/glossary rules, locale-key parity CI, and automatic translation pull requests. Current fully maintained locales: en, de, fr, es, pt, ru; other upstream locales fall back to English for fork-added strings.
 
-1. Host the project on weblate.org (free for open-source) pointed at
-   `nufuturepro/MedRX`, component = `app/src/main/res/values*/strings.xml`.
-2. Add a `TRANSLATING.md` contributor guide: where strings live, tone rules per
-   language (du / vous / tú / você / вы), and the "brand name is never
-   translated" rule.
-3. Add a CI check that fails when any locale drifts out of sync with English
-   (missing or extra keys), so PRs can't silently break a language.
-4. Enable Weblate's auto-PR flow so completed languages arrive as pull
-   requests, not raw commits.
+## Medication identity, dose versions, and duplicate review
 
-Current state: six languages fully in sync (en, de, fr, es, pt, ru — 362/362
-keys each); the other twenty upstream locales carry only the original Med
-strings and fall back to English for fork features.
+**Implemented:** medication records include stable treatment identity and dose amount/unit fields; Stats separates medication versions; the editor confirms an effective date before starting a version; editing a dose prompts to start a new version, with an explicit option to save the correction on the existing version. Old taken/skip history and ledger remain with the previous version; new versions get independent history and supply. Settings offers a review-only possible-duplicate queue with reviewed/dismissed state. Records are never merged or deleted by this screen.
 
-## Dosing models: sprays and as-needed meds (scoping)
+## Supply units, sprays, and priming
 
-Two medication shapes the current scheduler doesn't express, to be scoped
-before any scheduling-engine work:
+Supply counts have an explicit inventory unit, separate from dose strength. Scheduled use can consume multiple stock units. Inventory units include doses, tablets, capsules, mL, sprays, and puffs.
 
-### Spray medications
+Spray/puff counts are **estimates**, not guaranteed device readings. Priming/test sprays and other waste are separately logged as stock-only ledger changes: they reduce estimated stock, but never create taken history, skipped/missed doses, or change adherence. A manual correction/device-counter reading updates the count through the supply editor and remains visible in the ledger. Refill and low-stock values follow the selected inventory unit. Free-form dose strength is never inferred to be a stock unit.
 
-Examples: nasal corticosteroids, sublingual nitroglycerin, throat sprays.
+**Later follow-up:** device-specific counters, after-opening expiry, and priming recommendations are not part of basic stock tracking; user-entered device readings remain the source of truth when available.
 
-- **Unit model**: doses counted in *sprays* (or puffs), not tablets. A bottle
-  has a total spray count (e.g. 120 sprays), not a pill count. Supply tracking
-  should decrement per actuation; a "metered vs. non-metered" distinction
-  affects whether the ledger can assume exact counts.
-- **Schedule shapes**: fixed times (like current daily slots), PRN (see
-  below), or both (e.g. twice daily AND as-needed rescue). The med editor
-  needs a dose unit selector and a "doses per use" field (some sprays are
-  2 sprays per use).
-- **Open questions**: does one use = one spray or N? Refill math when the user
-  primes the device (priming wastes sprays)? Expiration/after-opening shelf
-  life reminders?
+## As-needed (PRN) medications — SHIPPED
 
-### As-needed (PRN) medications
+As-needed meds are tracked separately from scheduled adherence:
 
-Examples: analgesics, antihistamines, rescue inhalers.
-
-- **No fixed schedule**: the med card should appear without a time slot and
-  log *occurrences* (date + time + optionally amount), never generate missed
-  doses, and never count against adherence/streaks.
-- **Inter-dose guards**: a configurable minimum interval ("no more than one
-  dose per 4h") and a daily maximum — surfaced as warnings at log time and in
-  the ledger. This connects naturally to the existing skip reason "Double dose
-  protection".
-- **Stats impact**: PRN usage frequency over time is clinically interesting
-  (rescue-medicator use is an asthma/flare signal) — likely a new Stats view
-  rather than shoehorning into the adherence calendar.
-- **Data model**: extends `MedData` with a dosing kind (scheduled / PRN),
-  a per-use amount, and interval/cap rules; occurrences could reuse
-  `takenHistory` (it already stores a timestamp per date) but the planner,
-  reminders, and Stats must learn to ignore PRN entries.
-
-Suggested sequencing: supply-unit abstraction first (sprays are really a
-"unit" problem), PRN scheduling second (a scheduling-model problem), then the
-Stats view that treats both correctly.
+- **No schedule / missed / alarm** — PRN meds never generate missed counts or reminders. `isPrnActiveOn(date)` uses `creationDate`; archiving still leaves them visible.
+- **Each tap timestamped** — `prnUsages` is a `List<PrnUse(date,time,quantity=1)>`, never collapsed to one per day. `logPrnUse` appends, decrements stock by `supplyUnitsPerDose*qty`, logs `TAKEN`, and re-evaluates low-stock.
+- **Stats frequency** — scheduled Stats exclude PRN; a dedicated `PrnStats` block counts uses per treatment per month instead of adherence.
+- **Always-visible tray** — Home shows a collapsed "As needed" tray above the scheduled list (active PRN first, archived last). It is hidden (collapsed) even when populated; expand on demand. Each row shows today count, last use, limit warnings, and a Log button.
+- **Versioning, supply, CSV, localization, roadmap** — PRN fields (`isPrn`, `prnMaxPerDay`, `prnMinIntervalHours`, `prnUsages`) round-trip through JSON + CSV (`is_prn`, `prn_max_per_day`, `prn_min_hours`, `prn_usages` as `YYYY-MM-DDTHH:mm[:qty]` pipe list), travel with dose versions (split by `effectiveDate`), and are included in the supply widget low-stock pass. Duplicate review excludes PRN.

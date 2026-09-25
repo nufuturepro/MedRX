@@ -97,7 +97,7 @@ enum class DayStatus {
 
 fun getScheduledMedsForDate(date: LocalDate, items: List<MedData>): List<MedData> {
     val scheduled = items.filter { item ->
-        item.type == ItemType.Medicine &&
+        item.type == ItemType.Medicine && !item.isPrn &&
                 !date.isBefore(item.creationDate) &&
                 (item.endDate == null || !date.isAfter(item.endDate)) &&
                 (item.recurrenceDays.isNullOrEmpty() || item.recurrenceDays.contains(date.dayOfWeek)) &&
@@ -109,7 +109,7 @@ fun getScheduledMedsForDate(date: LocalDate, items: List<MedData>): List<MedData
     // Legacy edit bugs could leave several schedule fragments for the same
     // medication and time slot. Count each slot once per date — duplicates
     // would inflate the scheduled count and drag adherence down.
-    return scheduled.distinctBy { it.title to it.creationTime }
+    return scheduled.distinctBy { it.medicationInstanceKey() }
 }
 
 fun getStatusForDate(date: LocalDate, items: List<MedData>): DayStatus {
@@ -130,7 +130,94 @@ fun getStatusForDate(date: LocalDate, items: List<MedData>): DayStatus {
     }
 }    /** Number of recorded skips across all meds scheduled on [date]. */
     fun getSkipCountForDate(date: LocalDate, items: List<MedData>): Int =
-        items.count { it.type == ItemType.Medicine && it.skipHistory.containsKey(date) }
+        getScheduledMedsForDate(date, items).count { it.skipHistory.containsKey(date) }
+
+data class MedicationStats(
+    val instanceKey: String,
+    val treatmentKey: String,
+    val title: String,
+    val doseLabel: String,
+    val scheduled: Int,
+    val taken: Int,
+    val skipped: Int,
+    val missed: Int
+) {
+    val adherence: Int
+        get() = if (scheduled == 0) 0 else ((taken + skipped) * 100f / scheduled).toInt()
+}
+
+/** Calculates auditable per-instance stats; separate versions never collapse by title. */
+fun getMedicationStatsForMonth(month: YearMonth, items: List<MedData>): List<MedicationStats> {
+    val end = minOf(month.atEndOfMonth(), LocalDate.now())
+    if (month.atDay(1).isAfter(end)) return emptyList()
+
+    return getScheduledMedsForDate(month.atDay(1), items)
+        .plus(items.filter { it.type == ItemType.Medicine })
+        .distinctBy { it.medicationInstanceKey() }
+        .map { seed ->
+            var scheduled = 0
+            var taken = 0
+            var skipped = 0
+            var date = month.atDay(1)
+            while (!date.isAfter(end)) {
+                val slot = items.firstOrNull {
+                    it.type == ItemType.Medicine && !it.isPrn &&
+                        it.medicationInstanceKey() == seed.medicationInstanceKey() &&
+                        !date.isBefore(it.creationDate) &&
+                        (it.endDate == null || !date.isAfter(it.endDate)) &&
+                        (it.recurrenceDays.isNullOrEmpty() || it.recurrenceDays.contains(date.dayOfWeek)) &&
+                        (it.intervalGap == null || ChronoUnit.DAYS.between(it.creationDate, date) % it.intervalGap == 0L)
+                }
+                if (slot != null) {
+                    scheduled++
+                    if (slot.takenHistory.containsKey(date)) taken++
+                    else if (slot.skipHistory.containsKey(date)) skipped++
+                }
+                date = date.plusDays(1)
+            }
+            MedicationStats(
+                instanceKey = seed.medicationInstanceKey(),
+                treatmentKey = seed.treatmentKey(),
+                title = seed.title,
+                doseLabel = listOfNotNull(seed.doseAmount, seed.doseUnit).joinToString(" ").ifBlank { "—" },
+                scheduled = scheduled,
+                taken = taken,
+                skipped = skipped,
+                missed = scheduled - taken - skipped
+            )
+        }
+        .filter { it.scheduled > 0 }
+        .sortedWith(compareBy({ it.title }, { it.doseLabel }, { it.instanceKey }))
+}
+
+data class TreatmentStats(val treatmentKey: String, val title: String, val scheduled: Int, val accounted: Int) {
+    val adherence: Int get() = if (scheduled == 0) 0 else (accounted * 100f / scheduled).toInt()
+}
+
+fun getCombinedTreatmentStats(stats: List<MedicationStats>): List<TreatmentStats> =
+    stats.groupBy { it.treatmentKey to it.title }.map { (key, versions) ->
+        TreatmentStats(key.first, key.second, versions.sumOf { it.scheduled }, versions.sumOf { it.taken + it.skipped })
+    }.sortedBy { it.title }
+
+
+data class PrnStats(val title: String, val doseLabel: String, val usesInMonth: Int, val totalUses: Int) {
+    val key: String get() = title + "|" + doseLabel
+}
+
+fun getPrnStatsForMonth(month: java.time.YearMonth, items: List<MedData>): List<PrnStats> {
+    val monthStart = month.atDay(1)
+    val monthEnd = month.atEndOfMonth()
+    return items.filter { it.type == ItemType.Medicine && it.isPrn }
+        .groupBy { it.title to listOfNotNull(it.doseAmount, it.doseUnit).joinToString(" ").ifBlank { "-" } }
+        .map { (key, meds) ->
+            val (title, doseLabel) = key
+            val usesInMonth = meds.sumOf { m -> m.prnUsages.count { it.date in monthStart..monthEnd } }
+            val total = meds.sumOf { it.prnUsages.size }
+            PrnStats(title, doseLabel, usesInMonth, total)
+        }
+        .filter { it.usesInMonth > 0 || it.totalUses > 0 }
+        .sortedWith(compareBy({ it.title.lowercase() }, { it.doseLabel }))
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -151,6 +238,15 @@ fun StatsTab(
         configuration.screenWidthDp > 600 || configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val allMeds = viewModel.items.filter { it.type == ItemType.Medicine }
+    val medicationBreakdown = remember(currentMonth, allMeds, today) {
+        getMedicationStatsForMonth(currentMonth, allMeds)
+    }
+    val prnStats = remember(currentMonth, allMeds) {
+        getPrnStatsForMonth(currentMonth, allMeds)
+    }
+    val treatmentBreakdown = remember(medicationBreakdown) {
+        getCombinedTreatmentStats(medicationBreakdown)
+    }
 
     val stats = remember(currentMonth, allMeds, today) {
         var streakCalc = 0
@@ -301,6 +397,91 @@ fun StatsTab(
                     }
                 }
                 Spacer(modifier = Modifier.height(100.dp))
+            }
+
+            item {
+                MedicationBreakdownCard(
+                    instances = medicationBreakdown,
+                    treatments = treatmentBreakdown
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            item {
+                PrnUsageCard(stats = prnStats, month = currentMonth)
+                Spacer(modifier = Modifier.height(100.dp))
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun PrnUsageCard(stats: List<PrnStats>, month: java.time.YearMonth) {
+    if (stats.isEmpty()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(stringResource(R.string.prn_stats_title), style = MaterialTheme.typography.titleLarge, fontFamily = GoogleSansFlex, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.prn_stats_empty), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        return
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+    ) {
+        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.prn_stats_title), style = MaterialTheme.typography.titleLarge, fontFamily = GoogleSansFlex, fontWeight = FontWeight.Bold)
+            stats.forEach { s ->
+                Text(s.title + " · " + s.doseLabel + " — " + s.usesInMonth.toString() + " uses this month (" + s.totalUses.toString() + " total)", style = MaterialTheme.typography.bodyMedium, fontFamily = GoogleSansFlex, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MedicationBreakdownCard(
+    instances: List<MedicationStats>,
+    treatments: List<TreatmentStats>
+) {
+    if (instances.isEmpty()) return
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.stats_medication_breakdown),
+                style = MaterialTheme.typography.titleLarge,
+                fontFamily = GoogleSansFlex,
+                fontWeight = FontWeight.Bold
+            )
+            treatments.forEach { treatment ->
+                Text(
+                    text = "${treatment.title} · ${treatment.adherence}% ${stringResource(R.string.stats_combined_label)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontFamily = GoogleSansFlex,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                instances.filter { it.treatmentKey == treatment.treatmentKey && it.title == treatment.title }.forEach { stats ->
+                    Text(
+                        text = "  ${stats.doseLabel}: ${stats.adherence}% · ${stats.taken} ${stringResource(R.string.stats_taken_short)}, ${stats.skipped} ${stringResource(R.string.stats_skipped_short)}, ${stats.missed} ${stringResource(R.string.stats_missed_short)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = GoogleSansFlex,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

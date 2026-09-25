@@ -55,6 +55,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -87,6 +88,8 @@ import com.nukirk.medrx.services.MedifixImporter
 import com.nukirk.medrx.services.NotificationReceiver
 import com.nukirk.medrx.ItemType
 import com.nukirk.medrx.services.MedData
+import com.nukirk.medrx.services.MedicationDuplicateReview
+import com.nukirk.medrx.services.DuplicateReviewState
 import com.nukirk.medrx.ui.theme.GoogleSansFlex
 import com.nukirk.medrx.ui.theme.MedTheme
 import kotlinx.coroutines.Dispatchers
@@ -147,6 +150,11 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
         it.type == ItemType.Medicine && it.endDate != null && !LocalDate.now().isBefore(it.endDate)
     }
     var archivedMeds by remember { mutableStateOf(loadArchivedMeds()) }
+    var duplicateReviewRevision by remember { mutableStateOf(false) }
+    val duplicateCandidates = remember(duplicateReviewRevision, archivedMeds) {
+        MedicationDuplicateReview.findCandidates(DataRepository.loadData(context))
+            .filter { prefs.getString(MedicationDuplicateReview.reviewPreferenceKey(it), null) == null }
+    }
 
     val exportLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -376,6 +384,56 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                                 exportSkipReportLauncher.launch("skipped_doses_$timestamp.csv")
                             }
                         )
+                    }
+                }
+
+                item { Spacer(modifier = Modifier.height(32.dp)) }
+
+                item {
+                    Text(
+                        text = stringResource(R.string.duplicate_review_title),
+                        style = MaterialTheme.typography.titleMedium.copy(fontFamily = GoogleSansFlex),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(start = 16.dp, bottom = 4.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.duplicate_review_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
+                    )
+                    if (duplicateCandidates.isEmpty()) {
+                        Text(stringResource(R.string.duplicate_review_none), modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+                            duplicateCandidates.forEachIndexed { index, candidate ->
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                ) {
+                                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        candidate.items.forEach { med ->
+                                            val end = med.endDate?.toString() ?: stringResource(R.string.duplicate_review_date_open)
+                                            val dose = listOfNotNull(med.doseAmount, med.doseUnit).joinToString(" ").ifBlank { "—" }
+                                            Text("${med.title} · $dose · ${med.creationTime}", fontWeight = FontWeight.Medium)
+                                            Text("${med.creationDate} – $end · ${stringResource(R.string.duplicate_review_taken_skipped, med.takenHistory.size, med.skipHistory.size)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        val overlapEnd = candidate.overlappingTo?.toString() ?: stringResource(R.string.duplicate_review_date_open)
+                                        Text(stringResource(R.string.duplicate_review_overlap, candidate.overlappingFrom.toString(), overlapEnd), style = MaterialTheme.typography.labelMedium)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            TextButton(onClick = {
+                                                prefs.edit().putString(MedicationDuplicateReview.reviewPreferenceKey(candidate), DuplicateReviewState.REVIEWED).apply()
+                                                duplicateReviewRevision = !duplicateReviewRevision
+                                            }) { Text(stringResource(R.string.duplicate_review_reviewed)) }
+                                            TextButton(onClick = {
+                                                prefs.edit().putString(MedicationDuplicateReview.reviewPreferenceKey(candidate), DuplicateReviewState.DISMISSED).apply()
+                                                duplicateReviewRevision = !duplicateReviewRevision
+                                            }) { Text(stringResource(R.string.duplicate_review_dismiss)) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 

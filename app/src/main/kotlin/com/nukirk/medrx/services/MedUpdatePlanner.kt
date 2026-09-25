@@ -46,7 +46,13 @@ object MedUpdatePlanner {
         val rangeStart: Long? = NOT_A_RANGE,
         val rangeEnd: Long? = NOT_A_RANGE,
         val selectedDate: LocalDate = LocalDate.now(),
-        val symptomSeverity: SymptomSeverity? = null
+        val symptomSeverity: SymptomSeverity? = null,
+        val doseAmount: String? = null,
+        val doseUnit: String? = null,
+        val doseFieldsProvided: Boolean = false,
+        val isPrn: Boolean? = null,
+        val prnMaxPerDay: Int? = null,
+        val prnMinIntervalHours: Int? = null
     )
 
     sealed class Plan {
@@ -80,26 +86,57 @@ object MedUpdatePlanner {
         }
 
         // Rule 1: a no-op (or supply-only) save must not recreate anything.
-        val timesUnchanged = request.times.size == relatedItems.size &&
-                request.times.toSet() == relatedItems.map { it.creationTime }.toSet()
-        val daysUnchanged = when {
+        // The editor opens one schedule slot at a time. Siblings are retained
+        // by the planner, so a save is time-unchanged when that opened slot did
+        // not move, regardless of how many grouped slots exist.
+        val timesUnchanged = request.times.size == 1 &&
+                request.times.single() == original.creationTime &&
+                relatedItems.map { it.creationTime }.distinct().size == relatedItems.size
+        val effectiveIsPrn = request.isPrn ?: original.isPrn
+        val daysUnchanged = if (effectiveIsPrn) true else when {
             request.days == null && original.recurrenceDays == null -> true
             request.days == null || original.recurrenceDays == null -> false
             else -> request.days.toSet() == original.recurrenceDays.toSet()
         }
+        val intervalUnchanged = if (effectiveIsPrn) true else request.intervalGap == original.intervalGap
+        val notifUnchanged = if (effectiveIsPrn) true else request.notificationType == original.notificationType
+        val prnFieldsMatch = (request.isPrn == null || request.isPrn == original.isPrn) &&
+                ((request.prnMaxPerDay ?: original.prnMaxPerDay) == original.prnMaxPerDay) &&
+                ((request.prnMinIntervalHours ?: original.prnMinIntervalHours) == original.prnMinIntervalHours)
         val fieldsUnchanged = request.title == original.title &&
                 request.iconName == original.iconName &&
                 request.colorCode == original.colorCode &&
                 request.notes == original.notes &&
-                request.intervalGap == original.intervalGap &&
-                request.notificationType == original.notificationType
+                intervalUnchanged &&
+                notifUnchanged &&
+                prnFieldsMatch &&
+                (!isMedicine || daysUnchanged) &&
+                (!isMedicine || !request.doseFieldsProvided ||
+                        ((request.doseAmount ?: "") == (original.doseAmount ?: "") &&
+                                (request.doseUnit ?: "") == (original.doseUnit ?: "")))
 
-        if (timesUnchanged && daysUnchanged && fieldsUnchanged) {
+        val supplyFieldsUnchanged = supply == null || (
+            supply.unit == original.supplyUnit &&
+                supply.unitsPerDose.coerceAtLeast(1) == original.supplyUnitsPerDose
+            )
+        val supplyDisabled = supply == null && original.supplyDosesLeft != null
+        val groupSupplyUnchanged = supply == null || relatedItems.all { member ->
+            supply.unit == member.supplyUnit &&
+                    supply.unitsPerDose.coerceAtLeast(1) == member.supplyUnitsPerDose
+        }
+
+        if (timesUnchanged && daysUnchanged && fieldsUnchanged && supplyFieldsUnchanged && groupSupplyUnchanged && !supplyDisabled) {
             if (!isMedicine) return Plan.None
             // Distinguish "nothing changed at all" from "only the supply":
             // only the latter may touch the item (in place, via SupplyOnly).
             val effectiveStoredSupply = original.supplyDosesLeft?.let {
-                InventoryEntry(it, original.supplyDosesPerRefill ?: 0, original.supplyLowThreshold ?: 0)
+                InventoryEntry(
+                    it,
+                    original.supplyDosesPerRefill ?: 0,
+                    original.supplyLowThreshold ?: 0,
+                    original.supplyUnit,
+                    original.supplyUnitsPerDose
+                )
             }
             return if (supply != effectiveStoredSupply) Plan.SupplyOnly else Plan.None
         }
@@ -128,7 +165,12 @@ object MedUpdatePlanner {
             history: Map<LocalDate, LocalTime>,
             skips: Map<LocalDate, SkipRecord>,
             reuseOldGroup: Boolean
-        ): MedData = base.copy(
+        ): MedData {
+            val effectiveIsPrnForBuild = request.isPrn ?: base.isPrn
+            val effectiveRecurrence = if (effectiveIsPrnForBuild) null else request.days
+            val effectiveGap = if (effectiveIsPrnForBuild) null else request.intervalGap
+            val effectiveNotif = if (effectiveIsPrnForBuild) 0 else request.notificationType
+            return base.copy(
             id = 0,
             groupId = if (reuseOldGroup) base.groupId else NEW_GROUP,
             title = request.title,
@@ -136,20 +178,33 @@ object MedUpdatePlanner {
             colorCode = request.colorCode,
             creationTime = time,
             creationDate = creationDate,
-            recurrenceDays = request.days,
+            recurrenceDays = effectiveRecurrence,
             notes = request.notes,
-            intervalGap = request.intervalGap,
-            notificationType = request.notificationType,
+            intervalGap = effectiveGap,
+            notificationType = effectiveNotif,
             frequencyLabel = request.freqLabel,
             symptomSeverity = request.symptomSeverity,
+            doseAmount = if (isMedicine && request.doseFieldsProvided) request.doseAmount else base.doseAmount,
+            doseUnit = if (isMedicine && request.doseFieldsProvided) request.doseUnit else base.doseUnit,
+            medicationId = if (isMedicine) {
+                base.medicationId ?: original.medicationId ?: original.groupId?.toString() ?: original.id.toString()
+            } else base.medicationId,
             endDate = endDate,
             supplyDosesLeft = supply?.dosesLeft,
             supplyDosesPerRefill = supply?.dosesPerRefill?.takeIf { it > 0 },
             supplyLowThreshold = supply?.lowThreshold,
+            supplyUnit = supply?.unit ?: base.supplyUnit,
+            supplyUnitsPerDose = supply?.unitsPerDose?.coerceAtLeast(1) ?: base.supplyUnitsPerDose,
+            supplyEstimated = if (supply == null) base.supplyEstimated else supply.unit == SupplyUnit.SPRAY || supply.unit == SupplyUnit.PUFF,
             supplyAlertShown = false,
+            isPrn = request.isPrn ?: base.isPrn,
+            prnMaxPerDay = request.prnMaxPerDay ?: base.prnMaxPerDay,
+            prnMinIntervalHours = request.prnMinIntervalHours ?: base.prnMinIntervalHours,
+            prnUsages = base.prnUsages,
             takenHistory = HashMap(history),
             skipHistory = HashMap(skips)
         )
+        }
 
         if (isMedicine && isRangeUpdate) {
             val editStart: LocalDate
@@ -194,7 +249,8 @@ object MedUpdatePlanner {
                     .filterKeys { !it.isBefore(editStart) && (editEnd == null || !it.isAfter(editEnd)) }
                 val skipWindow = (skipByTime[time] ?: editedSkips ?: emptyMap<LocalDate, SkipRecord>())
                     .filterKeys { !it.isBefore(editStart) && (editEnd == null || !it.isAfter(editEnd)) }
-                entries += buildEntry(original, time, editStart, editEnd, window, skipWindow, reuseOldGroup = false)
+                val base = relatedItems.firstOrNull { it.creationTime == time } ?: original
+                entries += buildEntry(base, time, editStart, editEnd, window, skipWindow, reuseOldGroup = false)
             }
 
             // History-bearing fragment after the edited window.
@@ -219,8 +275,9 @@ object MedUpdatePlanner {
 
         // Plain (non-range) edit: rebuild every slot with its full history.
         val entries = rebuildTimes.map { time ->
+            val base = relatedItems.firstOrNull { it.creationTime == time } ?: original
             buildEntry(
-                original,
+                base,
                 time,
                 original.creationDate,
                 original.endDate,

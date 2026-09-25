@@ -34,7 +34,9 @@ object CsvPortability {
         "interval_days", "notes", "display_order", "category", "notification_type",
         "supply_doses_left", "supply_refill_size", "supply_low_threshold",
         "skipped_dates", "skipped_reasons", "skipped_times", "skipped_notes",
-        "symptom_severity"
+        "symptom_severity", "medication_id", "dose_amount", "dose_unit",
+        "supply_unit", "supply_units_per_dose", "supply_estimated",
+        "is_prn", "prn_max_per_day", "prn_min_hours", "prn_usages"
     )
 
     private const val LIST_SEPARATOR = "|"
@@ -77,7 +79,17 @@ object CsvPortability {
                     (m.skipHistory[it]?.time ?: LocalTime.MIDNIGHT).toString()
                 },
                 skips.joinToString(LIST_SEPARATOR) { m.skipHistory[it]?.note ?: "" },
-                m.symptomSeverity?.name ?: ""
+                m.symptomSeverity?.name ?: "",
+                m.medicationId ?: "",
+                m.doseAmount ?: "",
+                m.doseUnit ?: "",
+                m.supplyUnit.name,
+                m.supplyUnitsPerDose.toString(),
+                m.supplyEstimated.toString(),
+                m.isPrn.toString(),
+                m.prnMaxPerDay?.toString() ?: "",
+                m.prnMinIntervalHours?.toString() ?: "",
+                m.prnUsages.joinToString("|") { "${it.date}T${it.time}:${it.quantity}" }
             )
             sb.append(cells.joinToString(",") { encodeCell(it) }).append("\r\n")
         }
@@ -174,6 +186,27 @@ object CsvPortability {
                             } catch (e: Exception) {
                                 null
                             }
+                        },
+                        medicationId = cell("medication_id").takeIf { it.isNotEmpty() }
+                            ?: cell("group_id").takeIf { it.isNotEmpty() },
+                        doseAmount = cell("dose_amount").takeIf { it.isNotEmpty() },
+                        doseUnit = cell("dose_unit").takeIf { it.isNotEmpty() },
+                        supplyUnit = try { SupplyUnit.valueOf(cell("supply_unit").ifEmpty { "DOSE" }) } catch (_: Exception) { SupplyUnit.DOSE },
+                        supplyUnitsPerDose = (cell("supply_units_per_dose").toIntOrNull() ?: 1).coerceAtLeast(1),
+                        supplyEstimated = cell("supply_estimated").toBooleanStrictOrNull() ?: false,
+                        isPrn = cell("is_prn").toBooleanStrictOrNull() ?: false,
+                        prnMaxPerDay = cell("prn_max_per_day").toIntOrNull(),
+                        prnMinIntervalHours = cell("prn_min_hours").toIntOrNull(),
+                        prnUsages = cell("prn_usages").split("|").map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { raw ->
+                            try {
+                                val lastColon = raw.lastIndexOf(":")
+                                val qty = if (lastColon != -1) raw.substring(lastColon + 1).toIntOrNull() ?: 1 else 1
+                                val dt = if (lastColon != -1) raw.substring(0, lastColon) else raw
+                                val tIdx = dt.indexOf("T")
+                                val d = LocalDate.parse(dt.substring(0, tIdx))
+                                val tm = LocalTime.parse(dt.substring(tIdx + 1))
+                                PrnUse(d, tm, qty.coerceAtLeast(1))
+                            } catch (_: Exception) { null }
                         }
                     )
                 )
