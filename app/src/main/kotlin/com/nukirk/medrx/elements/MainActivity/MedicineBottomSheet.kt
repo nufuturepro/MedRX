@@ -52,6 +52,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.EventBusy
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Remove
@@ -152,6 +154,7 @@ fun MedicineBottomSheet(
     var doseAmount by remember { mutableStateOf(initialItem?.doseAmount ?: "") }
     var doseUnit by remember { mutableStateOf(initialItem?.doseUnit ?: "") }
     var nameError by remember { mutableStateOf(false) }
+    var showMoreActions by remember { mutableStateOf(false) }
 
     var frequencyType by remember {
         mutableIntStateOf(
@@ -1310,13 +1313,16 @@ fun MedicineBottomSheet(
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
                         .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Primary pair first: Cancel / Save at half width each so
+                    // both labels stay fully legible on narrow screens.
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
                             scope.launch { sheetState.hide() }.invokeOnCompletion {
@@ -1338,51 +1344,6 @@ fun MedicineBottomSheet(
                             maxLines = 1
                         )
                     }
-
-                    if (initialItem != null && initialItem.type == ItemType.Medicine) {
-                        OutlinedButton(
-                            onClick = {
-                                effectiveVersionDate = maxOf(initialVersionDate, initialItem.creationDate.plusDays(1))
-                                showVersionDatePicker = true
-                            },
-                            modifier = Modifier.height(50.dp),
-                            shape = RoundedCornerShape(50),
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) {
-                            Icon(
-                                Icons.Rounded.Archive,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                stringResource(R.string.start_new_version),
-                                fontFamily = GoogleSansFlex,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = { onArchive() },
-                            modifier = Modifier.height(50.dp),
-                            shape = RoundedCornerShape(50),
-                            interactionSource = remember { MutableInteractionSource() }
-                        ) {
-                            Icon(
-                                Icons.Rounded.Archive,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                stringResource(R.string.archive_med),
-                                fontFamily = GoogleSansFlex,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1
-                            )
-                        }
-                    }
-
                     Button(
                         onClick = {
                             // Commit any supply value still being typed before
@@ -1567,6 +1528,76 @@ fun MedicineBottomSheet(
                             maxLines = 1
                         )
                     }
+                    }
+
+                    // Structural actions (new version / archive) collapse
+                    // behind an overflow toggle so they never crowd the bar.
+                    if (initialItem != null && initialItem.type == ItemType.Medicine) {
+                        if (showMoreActions) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (initialItem != null && initialItem.type == ItemType.Medicine) {
+                        OutlinedButton(
+                            onClick = {
+                                effectiveVersionDate = maxOf(initialVersionDate, initialItem.creationDate.plusDays(1))
+                                showVersionDatePicker = true
+                            },
+                            modifier = Modifier.height(50.dp),
+                            shape = RoundedCornerShape(50),
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            Icon(
+                                Icons.Rounded.Archive,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                stringResource(R.string.start_new_version),
+                                fontFamily = GoogleSansFlex,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { onArchive() },
+                            modifier = Modifier.height(50.dp),
+                            shape = RoundedCornerShape(50),
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            Icon(
+                                Icons.Rounded.Archive,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                stringResource(R.string.archive_med),
+                                fontFamily = GoogleSansFlex,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                            }
+                        } else {
+                            TextButton(
+                                onClick = { showMoreActions = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    Icons.Rounded.MoreHoriz,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    stringResource(R.string.more_actions),
+                                    fontFamily = GoogleSansFlex,
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1619,16 +1650,30 @@ fun SupplyLedgerCard(ledger: List<SupplyChange>) {
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = stringResource(R.string.ledger_title),
-                fontFamily = GoogleSansFlex,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+        var ledgerExpanded by remember { mutableStateOf(false) }
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .clickable { ledgerExpanded = !ledgerExpanded }
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.ledger_title),
+                    fontFamily = GoogleSansFlex,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (ledgerExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Spacer(modifier = Modifier.height(8.dp))
 
+            if (ledgerExpanded) {
             ledger.takeLast(8).reversed().forEach { change ->
                 val deltaText = if (change.delta > 0) "+${change.delta}" else "${change.delta}"
                 val kindLabel = stringResource(
@@ -1666,6 +1711,14 @@ fun SupplyLedgerCard(ledger: List<SupplyChange>) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+            } else {
+                Text(
+                    text = stringResource(R.string.ledger_collapsed_hint, ledger.size),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = GoogleSansFlex,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

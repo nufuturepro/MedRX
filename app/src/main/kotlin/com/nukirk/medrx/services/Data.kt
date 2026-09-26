@@ -1213,7 +1213,19 @@ class MedViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             setOf(original.id)
         }
-        val archiveEnd = LocalDate.now().minusDays(1)
+        // Close the era at its last actually-logged dose (taken or skipped),
+        // never later than yesterday. Archiving a med the user already stopped
+        // taking must not stretch the schedule across silent days — those would
+        // be miscounted as misses in Stats. Eras with no logged activity keep
+        // the old behavior so genuine never-taken history still shows as missed.
+        val lastActivity = _items.filter { it.id in relatedIds }
+            .flatMap { it.takenHistory.keys + it.skipHistory.keys }
+            .maxOrNull()
+        val archiveEnd = if (lastActivity != null) {
+            minOf(lastActivity, LocalDate.now().minusDays(1))
+        } else {
+            LocalDate.now().minusDays(1)
+        }
 
         _items.replaceAll { current ->
             if (current.id in relatedIds) current.copy(endDate = archiveEnd) else current

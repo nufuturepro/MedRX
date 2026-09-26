@@ -325,6 +325,13 @@
     <string name="restore_med">Restaurar</string>
     <string name="archived_empty">Nada arquivado ainda.</string>
     <string name="med_restored">%1$s restaurado</string>
+    <string name="med_deleted">%1$s excluído</string>
+    <string name="archive_delete">Excluir</string>
+    <string name="archive_delete_title">Excluir medicamento arquivado?</string>
+    <string name="archive_delete_desc">Isso remove permanentemente %1$s e seu histórico de doses deste dispositivo. Exporte um backup antes, caso precise dele depois.</string>
+    <string name="archive_delete_blocked">Não é possível excluir: este grupo ainda tem um medicamento ativo. Restaure ou arquive todo o grupo primeiro.</string>
+    <string name="archive_restore_title">Restaurar medicamento arquivado?</string>
+    <string name="archive_restore_desc">Isso devolve %1$s à sua lista principal e reativa os lembretes. Para arquivar novamente depois: segure o cartão → Mais ações → Arquivar medicamento.</string>
     <string name="inventory_channel_name">Alertas de estoque</string>
     <string name="inventory_channel_desc">Alertas quando o estoque de um medicamento está baixo</string>
     <string name="supply_track_label">Acompanhar estoque</string>
@@ -369,6 +376,8 @@
     <string name="skip_report_title">Exportar doses puladas</string>
     <string name="skip_report_desc">CSV com todas as doses puladas: data, medicamento, motivo e nota; útil para compartilhar com seu médico</string>
     <string name="ledger_title">Mudanças recentes no estoque</string>
+    <string name="more_actions">Mais ações</string>
+    <string name="ledger_collapsed_hint">%1$d entradas – toque para ver</string>
     <string name="ledger_kind_taken">Dose tomada</string>
     <string name="ledger_kind_refund">Dose desfeita</string>
     <string name="ledger_kind_correction">Correção manual</string>

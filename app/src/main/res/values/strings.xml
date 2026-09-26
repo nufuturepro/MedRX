@@ -370,6 +370,13 @@
     <string name="restore_med">Restore</string>
     <string name="archived_empty">Nothing archived yet.</string>
     <string name="med_restored">Restored %1$s</string>
+    <string name="med_deleted">Deleted %1$s</string>
+    <string name="archive_delete">Delete</string>
+    <string name="archive_delete_title">Delete archived medicine?</string>
+    <string name="archive_delete_desc">This permanently removes %1$s and its dose history from this device. Export a backup first if you might need it later.</string>
+    <string name="archive_delete_blocked">Can’t delete: this group still has an active medication. Restore or archive the whole group first.</string>
+    <string name="archive_restore_title">Restore archived medicine?</string>
+    <string name="archive_restore_desc">This puts %1$s back on your home list and re-enables its reminders. To re-archive it later, long-press its card → More actions → Archive med.</string>
     <string name="inventory_channel_name">Supply alerts</string>
     <string name="inventory_channel_desc">Alerts when a medication supply is running low</string>
     <string name="supply_track_label">Track supply</string>
@@ -414,6 +421,8 @@
     <string name="skip_report_title">Export skipped doses</string>
     <string name="skip_report_desc">CSV of every skipped dose with date, medication, reason and note — handy to share with your doctor</string>
     <string name="ledger_title">Recent stock changes</string>
+    <string name="more_actions">More actions</string>
+    <string name="ledger_collapsed_hint">%1$d entries — tap to view</string>
     <string name="ledger_kind_taken">Dose taken</string>
     <string name="ledger_kind_refund">Dose un-taken</string>
     <string name="ledger_kind_correction">Manual correction</string>

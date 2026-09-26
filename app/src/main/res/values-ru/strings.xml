@@ -325,6 +325,13 @@
     <string name="restore_med">Восстановить</string>
     <string name="archived_empty">Пока ничего не архивировано.</string>
     <string name="med_restored">%1$s восстановлено</string>
+    <string name="med_deleted">%1$s удалён</string>
+    <string name="archive_delete">Удалить</string>
+    <string name="archive_delete_title">Удалить архивное лекарство?</string>
+    <string name="archive_delete_desc">Это навсегда удалит %1$s и его историю доз с этого устройства. Сначала экспортируйте резервную копию, если она может понадобиться позже.</string>
+    <string name="archive_delete_blocked">Нельзя удалить: в этой группе есть активное лекарство. Сначала восстановите или полностью архивируйте группу.</string>
+    <string name="archive_restore_title">Восстановить архивное лекарство?</string>
+    <string name="archive_restore_desc">%1$s вернётся на главный экран, напоминания включатся снова. Чтобы позже снова архивировать: удерживайте карточку → «Другие действия» → «Архивировать».</string>
     <string name="inventory_channel_name">Оповещения о запасах</string>
     <string name="inventory_channel_desc">Оповещения, когда запас лекарства заканчивается</string>
     <string name="supply_track_label">Отслеживать запас</string>
@@ -369,6 +376,8 @@
     <string name="skip_report_title">Экспорт пропущенных доз</string>
     <string name="skip_report_desc">CSV со всеми пропущенными дозами: дата, лекарство, причина и заметка — удобно показать врачу</string>
     <string name="ledger_title">Недавние изменения запасов</string>
+    <string name="more_actions">Другие действия</string>
+    <string name="ledger_collapsed_hint">%1$d записей – нажмите для просмотра</string>
     <string name="ledger_kind_taken">Доза принята</string>
     <string name="ledger_kind_refund">Приём отменён</string>
     <string name="ledger_kind_correction">Ручная корректировка</string>

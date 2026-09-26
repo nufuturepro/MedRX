@@ -325,6 +325,13 @@
     <string name="restore_med">Wiederherstellen</string>
     <string name="archived_empty">Noch nichts archiviert.</string>
     <string name="med_restored">%1$s wiederhergestellt</string>
+    <string name="med_deleted">%1$s gelöscht</string>
+    <string name="archive_delete">Löschen</string>
+    <string name="archive_delete_title">Archiviertes Medikament löschen?</string>
+    <string name="archive_delete_desc">Dies entfernt %1$s und den zugehörigen Verlauf endgültig von diesem Gerät. Erstelle vorher ein Backup, falls du ihn später brauchst.</string>
+    <string name="archive_delete_blocked">Löschen nicht möglich: Diese Gruppe enthält noch ein aktives Medikament. Stelle die Gruppe zuerst wieder her oder archiviere sie komplett.</string>
+    <string name="archive_restore_title">Archiviertes Medikament wiederherstellen?</string>
+    <string name="archive_restore_desc">Damit erscheint %1$s wieder auf deiner Startseite und die Erinnerungen werden reaktiviert. Zum späteren erneuten Archivieren: Karte lange drücken → Weitere Aktionen → Medikament archivieren.</string>
     <string name="inventory_channel_name">Bestandswarnungen</string>
     <string name="inventory_channel_desc">Warnungen, wenn der Vorrat eines Medikaments zur Neige geht</string>
     <string name="supply_track_label">Vorrat verfolgen</string>
@@ -411,6 +418,8 @@
     <string name="skip_report_title">Übersprungene Dosen exportieren</string>
     <string name="skip_report_desc">CSV aller übersprungenen Dosen mit Datum, Medikament, Grund und Notiz – praktisch zum Teilen mit deinem Arzt</string>
     <string name="ledger_title">Letzte Bestandsänderungen</string>
+    <string name="more_actions">Weitere Aktionen</string>
+    <string name="ledger_collapsed_hint">%1$d Einträge – zum Anzeigen tippen</string>
     <string name="ledger_kind_taken">Dosis genommen</string>
     <string name="ledger_kind_refund">Dosis zurückgenommen</string>
     <string name="ledger_kind_correction">Manuelle Korrektur</string>

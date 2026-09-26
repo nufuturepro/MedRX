@@ -325,6 +325,13 @@
     <string name="restore_med">Restaurar</string>
     <string name="archived_empty">Nada archivado todavía.</string>
     <string name="med_restored">%1$s restaurado</string>
+    <string name="med_deleted">%1$s eliminado</string>
+    <string name="archive_delete">Eliminar</string>
+    <string name="archive_delete_title">¿Eliminar el medicamento archivado?</string>
+    <string name="archive_delete_desc">Esto elimina permanentemente %1$s y su historial de dosis de este dispositivo. Exporta una copia de seguridad antes si podrías necesitarla más tarde.</string>
+    <string name="archive_delete_blocked">No se puede eliminar: este grupo todavía tiene un medicamento activo. Restaura o archiva primero todo el grupo.</string>
+    <string name="archive_restore_title">¿Restaurar el medicamento archivado?</string>
+    <string name="archive_restore_desc">Esto devuelve %1$s a tu lista principal y reactiva sus recordatorios. Para volver a archivarlo después: mantén pulsada la tarjeta → Más acciones → Archivar medicamento.</string>
     <string name="inventory_channel_name">Alertas de existencias</string>
     <string name="inventory_channel_desc">Alertas cuando las existencias de un medicamento están bajas</string>
     <string name="supply_track_label">Seguir existencias</string>
@@ -369,6 +376,8 @@
     <string name="skip_report_title">Exportar dosis omitidas</string>
     <string name="skip_report_desc">CSV con todas las dosis omitidas: fecha, medicamento, motivo y nota; útil para compartir con tu médico</string>
     <string name="ledger_title">Cambios recientes de existencias</string>
+    <string name="more_actions">Más acciones</string>
+    <string name="ledger_collapsed_hint">%1$d entradas – toca para ver</string>
     <string name="ledger_kind_taken">Dosis tomada</string>
     <string name="ledger_kind_refund">Dosis anulada</string>
     <string name="ledger_kind_correction">Corrección manual</string>

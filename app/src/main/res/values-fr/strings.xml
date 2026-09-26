@@ -325,6 +325,13 @@
     <string name="restore_med">Restaurer</string>
     <string name="archived_empty">Rien d’archivé pour le moment.</string>
     <string name="med_restored">%1$s restauré</string>
+    <string name="med_deleted">%1$s supprimé</string>
+    <string name="archive_delete">Supprimer</string>
+    <string name="archive_delete_title">Supprimer le médicament archivé ?</string>
+    <string name="archive_delete_desc">Cela supprime définitivement %1$s et son historique de doses de cet appareil. Exportez une sauvegarde avant si vous pourriez en avoir besoin plus tard.</string>
+    <string name="archive_delete_blocked">Suppression impossible : ce groupe contient encore un médicament actif. Restaurez ou archivez d’abord tout le groupe.</string>
+    <string name="archive_restore_title">Restaurer le médicament archivé ?</string>
+    <string name="archive_restore_desc">Cela remet %1$s sur votre écran d’accueil et réactive ses rappels. Pour le réarchiver plus tard : appui long sur la carte → Plus d’actions → Archiver le médicament.</string>
     <string name="inventory_channel_name">Alertes de stock</string>
     <string name="inventory_channel_desc">Alertes quand le stock d’un médicament devient faible</string>
     <string name="supply_track_label">Suivre le stock</string>
@@ -369,6 +376,8 @@
     <string name="skip_report_title">Exporter les doses sautées</string>
     <string name="skip_report_desc">CSV de toutes les doses sautées avec date, médicament, motif et note — pratique à partager avec votre médecin</string>
     <string name="ledger_title">Changements de stock récents</string>
+    <string name="more_actions">Plus d\'actions</string>
+    <string name="ledger_collapsed_hint">%1$d entrées – appuyez pour afficher</string>
     <string name="ledger_kind_taken">Dose prise</string>
     <string name="ledger_kind_refund">Dose annulée</string>
     <string name="ledger_kind_correction">Correction manuelle</string>

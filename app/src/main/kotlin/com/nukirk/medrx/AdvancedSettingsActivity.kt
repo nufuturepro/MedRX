@@ -49,6 +49,9 @@ import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -145,6 +148,8 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
 
     var showRestartDialog by remember { mutableStateOf(false) }
     var showResetPopup by remember { mutableStateOf(false) }
+    var medToDelete by remember { mutableStateOf<MedData?>(null) }
+    var medToRestore by remember { mutableStateOf<MedData?>(null) }
 
     fun loadArchivedMeds(): List<MedData> = DataRepository.loadData(context).filter {
         it.type == ItemType.Medicine && it.endDate != null && !LocalDate.now().isBefore(it.endDate)
@@ -154,6 +159,68 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
     val duplicateCandidates = remember(duplicateReviewRevision, archivedMeds) {
         MedicationDuplicateReview.findCandidates(DataRepository.loadData(context))
             .filter { prefs.getString(MedicationDuplicateReview.reviewPreferenceKey(it), null) == null }
+    }
+
+    val restoreArchivedMed: (MedData) -> Unit = { med ->
+        val items = DataRepository.loadData(context).toMutableList()
+        val selected = items.firstOrNull { it.id == med.id }
+        if (selected != null) {
+            val groupIds = if (selected.groupId != null) {
+                items.filter {
+                    it.type == ItemType.Medicine &&
+                        it.groupId == selected.groupId
+                }.map { it.id }.toSet()
+            } else {
+                setOf(selected.id)
+            }
+            val restoredItems = items.map { current ->
+                if (current.id in groupIds) {
+                    current.copy(
+                        endDate = null,
+                        supplyAlertShown = false
+                    )
+                } else current
+            }
+            DataRepository.saveData(context, restoredItems)
+            restoredItems.filter { it.id in groupIds }.forEach {
+                NotificationReceiver.scheduleNotification(context, it)
+            }
+            archivedMeds = loadArchivedMeds()
+            Toast.makeText(
+                context,
+                context.getString(R.string.med_restored, med.title),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    val deleteArchivedMed: (MedData) -> Unit = { med ->
+        val items = DataRepository.loadData(context).toMutableList()
+        val selected = items.firstOrNull { it.id == med.id }
+        if (selected != null) {
+            val groupIds = if (selected.groupId != null) {
+                items.filter {
+                    it.type == ItemType.Medicine &&
+                        it.groupId == selected.groupId
+                }.map { it.id }.toSet()
+            } else {
+                setOf(selected.id)
+            }
+            val deletable = items.filter { it.id in groupIds }
+                .all { it.type == ItemType.Medicine && it.endDate != null }
+            if (deletable) {
+                val remaining = items.filterNot { it.id in groupIds }
+                DataRepository.saveData(context, remaining)
+                archivedMeds = loadArchivedMeds()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.med_deleted, med.title),
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                Toast.makeText(context, R.string.archive_delete_blocked, Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     val exportLauncher =
@@ -273,30 +340,30 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                                 autoUpdates = !autoUpdates
                                 prefs.edit().putBoolean(PREF_AUTO_UPDATES, autoUpdates).apply()
                             },
-                            trailingContent = {
-                                Switch(
-                                    checked = autoUpdates,
-                                    onCheckedChange = {
-                                        autoUpdates = it
-                                        prefs.edit().putBoolean(PREF_AUTO_UPDATES, it).apply()
-                                    },
-                                    thumbContent = {
-                                        if (autoUpdates) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Check,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(SwitchDefaults.IconSize),
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Close,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(SwitchDefaults.IconSize),
-                                            )
+                                trailingContent = {
+                                    Switch(
+                                        checked = autoUpdates,
+                                        onCheckedChange = {
+                                            autoUpdates = it
+                                            prefs.edit().putBoolean(PREF_AUTO_UPDATES, it).apply()
+                                        },
+                                        thumbContent = {
+                                            if (autoUpdates) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Check,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(SwitchDefaults.IconSize),
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Close,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(SwitchDefaults.IconSize),
+                                                )
+                                            }
                                         }
-                                    }
-                                )
-                            }
+                                    )
+                                }
                         )
                         AdvancedSegmentedItem(
                             icon = Icons.Rounded.Flag,
@@ -517,44 +584,27 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                                     iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                     index = idx,
                                     count = archivedMeds.size,
-                                    onClick = {
-                                        val items = DataRepository.loadData(context).toMutableList()
-                                        val selected = items.firstOrNull { it.id == med.id }
-                                        if (selected != null) {
-                                            val groupIds = if (selected.groupId != null) {
-                                                items.filter {
-                                                    it.type == ItemType.Medicine &&
-                                                        it.groupId == selected.groupId
-                                                }.map { it.id }.toSet()
-                                            } else {
-                                                setOf(selected.id)
-                                            }
-                                            val restoredItems = items.map { current ->
-                                                if (current.id in groupIds) {
-                                                    current.copy(
-                                                        endDate = null,
-                                                        supplyAlertShown = false
-                                                    )
-                                                } else current
-                                            }
-                                            DataRepository.saveData(context, restoredItems)
-                                            restoredItems.filter { it.id in groupIds }.forEach {
-                                                NotificationReceiver.scheduleNotification(context, it)
-                                            }
-                                            archivedMeds = loadArchivedMeds()
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.med_restored, med.title),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    },
+                                    onClick = { medToRestore = med },
                                     trailingContent = {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Restore,
-                                            contentDescription = stringResource(R.string.restore_med),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
+                                        Row {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Restore,
+                                                contentDescription = stringResource(R.string.restore_med),
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clickable { medToRestore = med }
+                                            )
+                                            Spacer(modifier = Modifier.width(20.dp))
+                                            Icon(
+                                                imageVector = Icons.Rounded.DeleteForever,
+                                                contentDescription = stringResource(R.string.archive_delete),
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier
+                                                    .size(28.dp)
+                                                    .clickable { medToDelete = med }
+                                            )
+                                        }
                                     }
                                 )
                             }
@@ -602,6 +652,71 @@ fun AdvancedSettingsScreen(onBack: () -> Unit) {
                 val activityManager =
                     context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
                 activityManager.clearApplicationUserData()
+            }
+        )
+    }
+
+    medToDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { medToDelete = null },
+            title = {
+                Text(
+                    text = stringResource(R.string.archive_delete_title),
+                    fontFamily = GoogleSansFlex
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.archive_delete_desc, target.title),
+                    fontFamily = GoogleSansFlex
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    medToDelete = null
+                    deleteArchivedMed(target)
+                }) {
+                    Text(
+                        text = stringResource(R.string.archive_delete),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { medToDelete = null }) {
+                    Text(text = stringResource(R.string.cancel_action))
+                }
+            }
+        )
+    }
+
+    medToRestore?.let { target ->
+        AlertDialog(
+            onDismissRequest = { medToRestore = null },
+            title = {
+                Text(
+                    text = stringResource(R.string.archive_restore_title),
+                    fontFamily = GoogleSansFlex
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.archive_restore_desc, target.title),
+                    fontFamily = GoogleSansFlex
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    medToRestore = null
+                    restoreArchivedMed(target)
+                }) {
+                    Text(text = stringResource(R.string.restore_med))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { medToRestore = null }) {
+                    Text(text = stringResource(R.string.cancel_action))
+                }
             }
         )
     }
