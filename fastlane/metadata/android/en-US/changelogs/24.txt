@@ -1,0 +1,5 @@
+New launcher icon: health-metrics mark on phone and Wear OS, themed icons included.
+Streamlined editor: Cancel and Save on the bottom bar; "Start new version" and "Archive med" under More actions.
+Collapsible supply ledger on med cards.
+Archived-medications manager: restore or delete archived meds with confirmation prompts; delete is blocked unless the whole group is archived.
+Safer archiving: end dates backdate to your last logged activity, so re-archiving can't create phantom missed doses in Stats.
