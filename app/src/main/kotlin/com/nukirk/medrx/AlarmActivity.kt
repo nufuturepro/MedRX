@@ -99,6 +99,9 @@ import androidx.compose.ui.unit.dp
 import com.nukirk.medrx.services.DataRepository
 import com.nukirk.medrx.services.NotificationReceiver
 import com.nukirk.medrx.services.SkipReason
+import com.nukirk.medrx.services.labelResId
+import com.nukirk.medrx.services.SnoozePolicy
+import com.nukirk.medrx.services.userSelectableSkipReasons
 import com.nukirk.medrx.ui.theme.GoogleSansFlex
 import com.nukirk.medrx.ui.theme.MedTheme
 import kotlinx.coroutines.launch
@@ -405,7 +408,7 @@ fun AlarmScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 AnimatedAlarmButton(
-                    text = stringResource(R.string.alarm_snooze_action, snoozeDuration),
+                    text = alarmSnoozeActionText(snoozeDuration),
                     icon = Icons.Rounded.Snooze,
                     onClick = onSnooze,
                     modifier = Modifier.weight(1f),
@@ -481,13 +484,13 @@ fun SkipReasonSheet(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                SkipReason.entries.forEach { reason ->
+                userSelectableSkipReasons.forEach { reason ->
                     FilterChip(
                         selected = selected == reason,
                         onClick = { selected = reason },
                         label = {
                             Text(
-                                text = skipReasonLabel(reason),
+                                text = stringResource(reason.labelResId()),
                                 fontFamily = GoogleSansFlex,
                                 style = MaterialTheme.typography.bodyMedium
                             )
@@ -534,15 +537,18 @@ fun SkipReasonSheet(
     }
 }
 
-fun skipReasonLabel(reason: SkipReason): String = when (reason) {
-    SkipReason.ADVERSE_REACTION -> "Allergic / adverse reaction"
-    SkipReason.DOCTOR_DIRECTED -> "Doctor / clinic directed"
-    SkipReason.PROCEDURE_FASTING -> "Upcoming procedure / fasting"
-    SkipReason.VITALS_OUT_OF_RANGE -> "Vitals out of range"
-    SkipReason.DOUBLE_DOSE_PROTECTION -> "Double dose protection"
-    SkipReason.ACUTE_ILLNESS -> "Acute illness / vomiting"
-    SkipReason.SUPPLY_MISSING -> "Missing supply / expired"
-    SkipReason.OTHER -> "Patient discretion / other"
+/**
+ * Localized "Snooze (…)" label, using hours when the length divides evenly so
+ * a two-hour snooze does not read "120 min".
+ */
+@Composable
+fun alarmSnoozeActionText(snoozeDuration: Int): String {
+    val label = SnoozePolicy.label(snoozeDuration)
+    return if (label.useHours) {
+        stringResource(R.string.alarm_snooze_action_hours, label.hours)
+    } else {
+        stringResource(R.string.alarm_snooze_action, label.minutes)
+    }
 }
 
 @Composable

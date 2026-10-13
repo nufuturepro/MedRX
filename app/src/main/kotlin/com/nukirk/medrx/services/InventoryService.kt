@@ -99,6 +99,11 @@ object InventoryService {
      * only logs and decrements stock when the dose isn't already logged; an
      * un-take only refunds when it was. This is what keeps a dose tapped on
      * the card AND confirmed via notification/alarm from counting twice.
+     *
+     * Logging a take also drops any skip recorded for the same day: a dose is
+     * either taken or skipped, and leaving both on the item made the card read
+     * "taken" while the skip still fed the adherence report. Un-taking does not
+     * put the skip back — the day simply returns to scheduled.
      */
     fun applyTakeIfNew(
         context: Context?,
@@ -111,9 +116,12 @@ object InventoryService {
         return when {
             isTaken && alreadyLogged -> item
             isTaken -> {
+                val loggedFrom = if (item.skipHistory.containsKey(date)) {
+                    item.copy(skipHistory = HashMap(item.skipHistory).apply { remove(date) })
+                } else item
                 val updated = applyInventoryChange(
                     context,
-                    item.copy(takenHistory = HashMap(item.takenHistory).apply { put(date, takenAt) }),
+                    loggedFrom.copy(takenHistory = HashMap(loggedFrom.takenHistory).apply { put(date, takenAt) }),
                     isTaken = true
                 )
                 logSupplyChange(

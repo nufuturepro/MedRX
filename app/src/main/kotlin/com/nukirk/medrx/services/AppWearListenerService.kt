@@ -203,6 +203,7 @@ class AppWearListenerService : WearableListenerService() {
                             val items = DataRepository.loadData(applicationContext).toMutableList()
                             val today = LocalDate.now()
                             var updated = false
+                            val resolvedIds = mutableListOf<Long>()
 
                             val targetType =
                                 if (itemTypeStr == "medicine") ItemType.Medicine else ItemType.Event
@@ -235,6 +236,7 @@ class AppWearListenerService : WearableListenerService() {
                                     if (newItem !== item) {
                                         items[i] = newItem
                                         NotificationReceiver.scheduleNotification(applicationContext, items[i])
+                                        resolvedIds += item.id
                                         updated = true
                                     }
                                 }
@@ -248,6 +250,18 @@ class AppWearListenerService : WearableListenerService() {
                                     )
                                 )
                                 syncDataToWear(applicationContext)
+
+                                // Mirror an in-app completion: retire the phone's
+                                // reminder and snooze tally for the dose the watch
+                                // just logged.
+                                if (isTaken && resolvedIds.isNotEmpty()) {
+                                    val ids = resolvedIds.toLongArray()
+                                    try {
+                                        SnoozeTracker.clear(applicationContext, ids, today)
+                                        NotificationReceiver.cancelReminder(applicationContext, ids)
+                                    } catch (_: Exception) {
+                                    }
+                                }
                             }
                         }
                     }

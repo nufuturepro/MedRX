@@ -53,6 +53,7 @@ import androidx.compose.material.icons.rounded.MedicalServices
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
@@ -95,6 +96,7 @@ import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import com.nukirk.medrx.AVAILABLE_ICONS
 import com.nukirk.medrx.BirthdayCard
 import com.nukirk.medrx.EditModeActivity
@@ -112,9 +114,11 @@ import com.nukirk.medrx.elements.MainActivity.IllnessesBottomSheet
 import com.nukirk.medrx.elements.MainActivity.MainFAB
 import com.nukirk.medrx.elements.MainActivity.AsNeededTray
 import com.nukirk.medrx.elements.MainActivity.MedDataCard
+import com.nukirk.medrx.elements.MainActivity.SwipeGestureHint
 import com.nukirk.medrx.elements.MainActivity.MedSnackbarHost
 import com.nukirk.medrx.elements.MainActivity.MedicineBottomSheet
 import com.nukirk.medrx.elements.MainActivity.NotesBottomSheet
+import com.nukirk.medrx.elements.MainActivity.SkipNoteEditorDialog
 import com.nukirk.medrx.elements.MainActivity.Tabs.StatsTab
 import com.nukirk.medrx.elements.MainActivity.Tabs.YouTab
 import com.nukirk.medrx.elements.MainActivity.WeeklyCalendarPager
@@ -135,7 +139,9 @@ fun MedApp(
     presets: List<String>,
     useBottomSheet: Boolean,
     isExpandedScreen: Boolean,
-    userDob: String
+    userDob: String,
+    showSwipeHint: Boolean,
+    onDismissSwipeHint: () -> Unit
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -150,6 +156,12 @@ fun MedApp(
     var showDatePicker by remember { mutableStateOf(false) }
     var activeSwipingItemId by remember { mutableStateOf<Long?>(null) }
     var noteToShow by remember { mutableStateOf<String?>(null) }
+    // Deletion is destructive and hard to undo by muscle memory, so a swipe
+    // only *requests* it; the dialog below is what actually deletes.
+    var pendingDelete by remember { mutableStateOf<Pair<MedData, LocalDate>?>(null) }
+    // The note on a recorded skip stays editable: the card's skip detail line
+    // reopens it here instead of forcing an un-skip/re-skip round trip.
+    var skipNoteEdit by remember { mutableStateOf<Pair<MedData, LocalDate>?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -650,6 +662,14 @@ fun MedApp(
                                                                 12.dp
                                                             )
                                                         ) {
+                                                            if (showSwipeHint && displayItems.isNotEmpty()) {
+                                                                item(
+                                                                    key = "swipe_hint",
+                                                                    span = { GridItemSpan(maxLineSpan) }
+                                                                ) {
+                                                                    SwipeGestureHint(onDismiss = onDismissSwipeHint)
+                                                                }
+                                                            }
                                                             if (illnesses.isNotEmpty()) {
                                                                 items(
                                                                     count = illnesses.size,
@@ -670,40 +690,8 @@ fun MedApp(
                                                                     SwipeableSquishItem(
                                                                         item = item,
                                                                         shape = shape,
-                                                                        onDeleteThresholdReached = { resetAnimation ->
-                                                                            val itemToRestore = item
-                                                                            viewModel.deleteItem(
-                                                                                item,
-                                                                                pageDate
-                                                                            )
-                                                                            val deletedMsg =
-                                                                                context.getString(
-                                                                                    R.string.item_deleted,
-                                                                                    item.title
-                                                                                )
-                                                                            val undoMsg =
-                                                                                context.getString(R.string.undo_action)
-                                                                            scope.launch {
-                                                                                snackbarHostState.currentSnackbarData?.dismiss()
-                                                                                val dismissJob =
-                                                                                    launch {
-                                                                                        delay(2000); snackbarHostState.currentSnackbarData?.dismiss()
-                                                                                    }
-                                                                                val result =
-                                                                                    snackbarHostState.showSnackbar(
-                                                                                        message = deletedMsg,
-                                                                                        actionLabel = undoMsg,
-                                                                                        withDismissAction = true,
-                                                                                        duration = SnackbarDuration.Indefinite
-                                                                                    )
-                                                                                dismissJob.cancel()
-                                                                                if (result == SnackbarResult.ActionPerformed) {
-                                                                                    viewModel.restoreItem(
-                                                                                        itemToRestore
-                                                                                    )
-                                                                                    resetAnimation()
-                                                                                }
-                                                                            }
+                                                                        onDeleteRequested = {
+                                                                            pendingDelete = item to pageDate
                                                                         },
                                                                         onSwipeStart = {
                                                                             activeSwipingItemId =
@@ -829,45 +817,8 @@ fun MedApp(
                                                                         SwipeableSquishItem(
                                                                             item = item,
                                                                             shape = shape,
-                                                                            onDeleteThresholdReached = { resetAnimation ->
-                                                                                val itemToRestore =
-                                                                                    item
-                                                                                viewModel.deleteItem(
-                                                                                    item,
-                                                                                    pageDate
-                                                                                )
-                                                                                val deletedMsg =
-                                                                                    context.getString(
-                                                                                        R.string.item_deleted,
-                                                                                        item.title
-                                                                                    )
-                                                                                val undoMsg =
-                                                                                    context.getString(
-                                                                                        R.string.undo_action
-                                                                                    )
-                                                                                scope.launch {
-                                                                                    snackbarHostState.currentSnackbarData?.dismiss()
-                                                                                    val dismissJob =
-                                                                                        launch {
-                                                                                            delay(
-                                                                                                2000
-                                                                                            ); snackbarHostState.currentSnackbarData?.dismiss()
-                                                                                        }
-                                                                                    val result =
-                                                                                        snackbarHostState.showSnackbar(
-                                                                                            message = deletedMsg,
-                                                                                            actionLabel = undoMsg,
-                                                                                            withDismissAction = true,
-                                                                                            duration = SnackbarDuration.Indefinite
-                                                                                        )
-                                                                                    dismissJob.cancel()
-                                                                                    if (result == SnackbarResult.ActionPerformed) {
-                                                                                        viewModel.restoreItem(
-                                                                                            itemToRestore
-                                                                                        )
-                                                                                        resetAnimation()
-                                                                                    }
-                                                                                }
+                                                                            onDeleteRequested = {
+                                                                                pendingDelete = item to pageDate
                                                                             },
                                                                             onSwipeStart = {
                                                                                 activeSwipingItemId =
@@ -876,6 +827,15 @@ fun MedApp(
                                                                             onSwipeCancel = {
                                                                                 activeSwipingItemId =
                                                                                     null
+                                                                            },
+                                                                            // Right swipe skips an untaken dose; left swipe asks
+                                                                            // before deleting it. A skipped dose stays swipeable
+                                                                            // so the same gesture takes the skip back off.
+                                                                            skipEnabled = item.type == ItemType.Medicine &&
+                                                                                !pageDate.isAfter(LocalDate.now()) &&
+                                                                                !item.takenHistory.containsKey(pageDate),
+                                                                            onSkipRequested = {
+                                                                                skipRequest = item to pageDate
                                                                             }
                                                                         ) {
                                                                             MedDataCard(
@@ -904,6 +864,10 @@ fun MedApp(
                                                                                     viewModel.refillSupply(
                                                                                         item
                                                                                     )
+                                                                                },
+                                                                                onEditSkipNote = {
+                                                                                    skipNoteEdit =
+                                                                                        item to pageDate
                                                                                 }
                                                                             )
                                                                         }
@@ -937,6 +901,11 @@ fun MedApp(
                                                                 2.dp
                                                             )
                                                         ) {
+                                                            if (showSwipeHint && displayItems.isNotEmpty()) {
+                                                                item(key = "swipe_hint") {
+                                                                    SwipeGestureHint(onDismiss = onDismissSwipeHint)
+                                                                }
+                                                            }
                                                             if (illnesses.isNotEmpty()) {
                                                                 itemsIndexed(
                                                                     items = illnesses,
@@ -951,40 +920,8 @@ fun MedApp(
                                                                     SwipeableSquishItem(
                                                                         item = item,
                                                                         shape = shape,
-                                                                        onDeleteThresholdReached = { resetAnimation ->
-                                                                            val itemToRestore = item
-                                                                            viewModel.deleteItem(
-                                                                                item,
-                                                                                pageDate
-                                                                            )
-                                                                            val deletedMsg =
-                                                                                context.getString(
-                                                                                    R.string.item_deleted,
-                                                                                    item.title
-                                                                                )
-                                                                            val undoMsg =
-                                                                                context.getString(R.string.undo_action)
-                                                                            scope.launch {
-                                                                                snackbarHostState.currentSnackbarData?.dismiss()
-                                                                                val dismissJob =
-                                                                                    launch {
-                                                                                        delay(2000); snackbarHostState.currentSnackbarData?.dismiss()
-                                                                                    }
-                                                                                val result =
-                                                                                    snackbarHostState.showSnackbar(
-                                                                                        message = deletedMsg,
-                                                                                        actionLabel = undoMsg,
-                                                                                        withDismissAction = true,
-                                                                                        duration = SnackbarDuration.Indefinite
-                                                                                    )
-                                                                                dismissJob.cancel()
-                                                                                if (result == SnackbarResult.ActionPerformed) {
-                                                                                    viewModel.restoreItem(
-                                                                                        itemToRestore
-                                                                                    )
-                                                                                    resetAnimation()
-                                                                                }
-                                                                            }
+                                                                        onDeleteRequested = {
+                                                                            pendingDelete = item to pageDate
                                                                         },
                                                                         onSwipeStart = {
                                                                             activeSwipingItemId =
@@ -1118,45 +1055,8 @@ fun MedApp(
                                                                         SwipeableSquishItem(
                                                                             item = item,
                                                                             shape = shape,
-                                                                            onDeleteThresholdReached = { resetAnimation ->
-                                                                                val itemToRestore =
-                                                                                    item
-                                                                                viewModel.deleteItem(
-                                                                                    item,
-                                                                                    pageDate
-                                                                                )
-                                                                                val deletedMsg =
-                                                                                    context.getString(
-                                                                                        R.string.item_deleted,
-                                                                                        item.title
-                                                                                    )
-                                                                                val undoMsg =
-                                                                                    context.getString(
-                                                                                        R.string.undo_action
-                                                                                    )
-                                                                                scope.launch {
-                                                                                    snackbarHostState.currentSnackbarData?.dismiss()
-                                                                                    val dismissJob =
-                                                                                        launch {
-                                                                                            delay(
-                                                                                                2000
-                                                                                            ); snackbarHostState.currentSnackbarData?.dismiss()
-                                                                                        }
-                                                                                    val result =
-                                                                                        snackbarHostState.showSnackbar(
-                                                                                            message = deletedMsg,
-                                                                                            actionLabel = undoMsg,
-                                                                                            withDismissAction = true,
-                                                                                            duration = SnackbarDuration.Indefinite
-                                                                                        )
-                                                                                    dismissJob.cancel()
-                                                                                    if (result == SnackbarResult.ActionPerformed) {
-                                                                                        viewModel.restoreItem(
-                                                                                            itemToRestore
-                                                                                        )
-                                                                                        resetAnimation()
-                                                                                    }
-                                                                                }
+                                                                            onDeleteRequested = {
+                                                                                pendingDelete = item to pageDate
                                                                             },
                                                                             onSwipeStart = {
                                                                                 activeSwipingItemId =
@@ -1165,6 +1065,15 @@ fun MedApp(
                                                                             onSwipeCancel = {
                                                                                 activeSwipingItemId =
                                                                                     null
+                                                                            },
+                                                                            // Right swipe skips an untaken dose; left swipe asks
+                                                                            // before deleting it. A skipped dose stays swipeable
+                                                                            // so the same gesture takes the skip back off.
+                                                                            skipEnabled = item.type == ItemType.Medicine &&
+                                                                                !pageDate.isAfter(LocalDate.now()) &&
+                                                                                !item.takenHistory.containsKey(pageDate),
+                                                                            onSkipRequested = {
+                                                                                skipRequest = item to pageDate
                                                                             }
                                                                         ) {
                                                                             MedDataCard(
@@ -1193,6 +1102,10 @@ fun MedApp(
                                                                                     viewModel.refillSupply(
                                                                                         item
                                                                                     )
+                                                                                },
+                                                                                onEditSkipNote = {
+                                                                                    skipNoteEdit =
+                                                                                        item to pageDate
                                                                                 }
                                                                             )
                                                                         }
@@ -1497,12 +1410,131 @@ fun MedApp(
     }
 
     skipRequest?.let { (item, date) ->
-        SkipReasonSheet(
-            onDismiss = { skipRequest = null },
-            onConfirm = { reason, note ->
-                viewModel.toggleSkip(item, date, reason, note)
-                skipRequest = null
+        val existing = item.skipHistory[date]
+        if (existing != null) {
+            // Re-skipping a dose that is already skipped takes the skip back
+            // off, so a mis-swipe never needs a trip through the editor.
+            AlertDialog(
+                onDismissRequest = { skipRequest = null },
+                properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = false),
+                title = {
+                    Text(
+                        text = stringResource(R.string.unskip_confirm_title),
+                        fontFamily = GoogleSansFlex,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = stringResource(R.string.unskip_confirm_message, item.title),
+                        fontFamily = GoogleSansFlex,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                confirmButton = {
+                    ExpressiveTextButton(
+                        onClick = {
+                            // Passing the stored reason re-enters toggleSkip on
+                            // its remove branch, so no new reason is invented.
+                            viewModel.toggleSkip(item, date, existing.reason, existing.note)
+                            skipRequest = null
+                        },
+                        text = stringResource(R.string.unskip_action),
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                },
+                dismissButton = {
+                    ExpressiveTextButton(
+                        onClick = { skipRequest = null },
+                        text = stringResource(R.string.cancel_action)
+                    )
+                },
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(32.dp),
+                tonalElevation = 6.dp
+            )
+        } else {
+            SkipReasonSheet(
+                onDismiss = { skipRequest = null },
+                onConfirm = { reason, note ->
+                    viewModel.toggleSkip(item, date, reason, note)
+                    skipRequest = null
+                }
+            )
+        }
+    }
+
+    skipNoteEdit?.let { (item, date) ->
+        SkipNoteEditorDialog(
+            initialNote = item.skipHistory[date]?.note,
+            onDismiss = { skipNoteEdit = null },
+            onConfirm = { note ->
+                viewModel.setSkipNote(item, date, note)
+                skipNoteEdit = null
             }
+        )
+    }
+
+    // A left swipe only queues the deletion; this dialog is the confirmation
+    // gate in front of viewModel.deleteItem.
+    pendingDelete?.let { (item, date) ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = false),
+            title = {
+                Text(
+                    text = stringResource(R.string.delete_confirm_title),
+                    fontFamily = GoogleSansFlex,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.delete_confirm_message, item.title),
+                    fontFamily = GoogleSansFlex,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                ExpressiveTextButton(
+                    onClick = {
+                        pendingDelete = null
+                        viewModel.deleteItem(item, date)
+                        val deletedMsg = context.getString(R.string.item_deleted, item.title)
+                        val undoMsg = context.getString(R.string.undo_action)
+                        scope.launch {
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            val dismissJob = launch {
+                                delay(2000)
+                                snackbarHostState.currentSnackbarData?.dismiss()
+                            }
+                            val result = snackbarHostState.showSnackbar(
+                                message = deletedMsg,
+                                actionLabel = undoMsg,
+                                withDismissAction = true,
+                                duration = SnackbarDuration.Indefinite
+                            )
+                            dismissJob.cancel()
+                            if (result == SnackbarResult.ActionPerformed) {
+                                viewModel.restoreItem(item)
+                            }
+                        }
+                    },
+                    text = stringResource(R.string.delete_action),
+                    contentColor = MaterialTheme.colorScheme.error
+                )
+            },
+            dismissButton = {
+                ExpressiveTextButton(
+                    onClick = { pendingDelete = null },
+                    text = stringResource(R.string.cancel_action)
+                )
+            },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(32.dp),
+            tonalElevation = 6.dp
         )
     }
 }

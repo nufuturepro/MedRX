@@ -37,11 +37,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Autorenew
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.MedicalServices
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SwipeLeft
+import androidx.compose.material.icons.rounded.SwipeRight
+import androidx.compose.material.icons.rounded.Undo
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -50,6 +55,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -88,7 +94,9 @@ import com.nukirk.medrx.AVAILABLE_ICONS
 import com.nukirk.medrx.ItemType
 import com.nukirk.medrx.R
 import com.nukirk.medrx.services.MedData
+import com.nukirk.medrx.services.SkipReason
 import com.nukirk.medrx.services.labelResId
+import com.nukirk.medrx.services.skipCardDetail
 import com.nukirk.medrx.ui.theme.GoogleSansFlex
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -111,7 +119,8 @@ fun MedDataCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onSkip: () -> Unit = {},
-    onRefill: () -> Unit = {}
+    onRefill: () -> Unit = {},
+    onEditSkipNote: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -381,12 +390,20 @@ fun MedDataCard(
                             } else if (isSkippedToday && skipRecord != null) {
                                 val skipTime =
                                     skipRecord.time.format(DateTimeFormatter.ofPattern("HH:mm"))
+                                // A dose postponed by the snooze limit reads as
+                                // delayed rather than skipped.
+                                val isDelayed = skipRecord.reason == SkipReason.DELAYED
                                 Text(
                                     text = if (isToday) {
-                                        stringResource(R.string.status_skipped_format, skipTime)
+                                        stringResource(
+                                            if (isDelayed) R.string.status_delayed_format
+                                            else R.string.status_skipped_format,
+                                            skipTime
+                                        )
                                     } else {
                                         stringResource(
-                                            R.string.status_skipped_date_format,
+                                            if (isDelayed) R.string.status_delayed_date_format
+                                            else R.string.status_skipped_date_format,
                                             currentViewDate.format(DateTimeFormatter.ofPattern("dd/MM")),
                                             skipTime
                                         )
@@ -434,6 +451,43 @@ fun MedDataCard(
                             )
                         }
                     }
+                    if (skipRecord != null) {
+                        // Why the dose was skipped, plus whatever the user typed
+                        // in the skip sheet: "Skipped (21:20)" on its own hid the
+                        // whole reason behind a timestamp. The line is tappable —
+                        // a note written mid-reminder usually needs a correction.
+                        val skipDetail = skipCardDetail(skipRecord) { reason ->
+                            context.getString(reason.labelResId())
+                        }
+                        if (skipDetail != null) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onEditSkipNote()
+                                    }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = skipDetail,
+                                    fontFamily = GoogleSansFlex,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Rounded.Edit,
+                                    contentDescription = stringResource(R.string.skip_note_edit_title),
+                                    modifier = Modifier.size(12.dp),
+                                    tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f)
+                                )
+                            }
+                        }
+                    }
                 }
             },
             leadingContent = {
@@ -458,7 +512,11 @@ fun MedDataCard(
                     // circle (never on top of it), so the card stays a single
                     // line tall.
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (!isTakenToday && toggleEnabled && !isSkippedToday) {
+                        // The action stays on the card in both states: an
+                        // untaken dose can be skipped, and a skipped one can be
+                        // taken back off. Hiding it after a skip is what made
+                        // the second dose of a group feel unreachable.
+                        if (!isTakenToday && toggleEnabled) {
                             TextButton(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -468,14 +526,17 @@ fun MedDataCard(
                                 modifier = Modifier.height(30.dp)
                             ) {
                                 Icon(
-                                    Icons.Rounded.SkipNext,
+                                    if (isSkippedToday) Icons.Rounded.Undo else Icons.Rounded.SkipNext,
                                     contentDescription = null,
                                     modifier = Modifier.size(16.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    stringResource(R.string.card_skip_action),
+                                    stringResource(
+                                        if (isSkippedToday) R.string.card_unskip_action
+                                        else R.string.card_skip_action
+                                    ),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -567,6 +628,65 @@ fun MedDataCard(
             } else null,
             modifier = Modifier.padding(vertical = 4.dp),
             colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+    }
+}
+
+/**
+ * One-time teaching aid for the card gestures, pinned above the first cards on
+ * the home tab. It is remembered as dismissed, so acknowledging it retires it
+ * for good rather than for the session.
+ */
+@Composable
+fun SwipeGestureHint(onDismiss: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f),
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.swipe_hint_title),
+                    fontFamily = GoogleSansFlex,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                SwipeHintLine(
+                    icon = Icons.Rounded.SwipeRight,
+                    label = stringResource(R.string.swipe_hint_skip)
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                SwipeHintLine(
+                    icon = Icons.Rounded.SwipeLeft,
+                    label = stringResource(R.string.swipe_hint_delete)
+                )
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = stringResource(R.string.swipe_hint_dismiss),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SwipeHintLine(icon: ImageVector, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = label,
+            fontFamily = GoogleSansFlex,
+            style = MaterialTheme.typography.bodyMedium
         )
     }
 }

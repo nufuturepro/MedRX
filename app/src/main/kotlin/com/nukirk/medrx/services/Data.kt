@@ -75,8 +75,30 @@ enum class SkipReason {
     DOUBLE_DOSE_PROTECTION, // Already taken or taken too recently
     ACUTE_ILLNESS,          // Acute illness / vomiting; cannot keep meds down
     SUPPLY_MISSING,         // Dose unavailable or compromised
+    SNOOZED_AWAY,           // Repeated snoozes hit the configured limit (automatic)
+    DELAYED,                // Postponed to the next scheduled dose (automatic)
     OTHER                   // Patient discretion
 }
+
+/**
+ * Reasons offered in the skip pickers. [SkipReason.SNOOZED_AWAY] and
+ * [SkipReason.DELAYED] are written by the app itself when a dose is snoozed past
+ * the configured limit, so they are never something the user selects.
+ *
+ * [SkipReason.DELAYED] deliberately lives in `skipHistory` alongside real
+ * skips: a postponed dose is *resolved* (it must stop reminding) and needs to
+ * keep round-tripping through the existing import/export, planner and undo
+ * paths. What separates it is how it is counted — see `MedicationStats`, which
+ * buckets it as `delayed` rather than crediting it as `skipped`.
+ */
+val userSelectableSkipReasons: List<SkipReason> =
+    SkipReason.entries.filter {
+        it != SkipReason.SNOOZED_AWAY && it != SkipReason.DELAYED
+    }
+
+/** True when [this] was recorded by the app rather than chosen by the user. */
+val SkipReason.isAutomatic: Boolean
+    get() = this == SkipReason.SNOOZED_AWAY || this == SkipReason.DELAYED
 
 /** How intense a logged symptom episode is. */
 enum class SymptomSeverity {
@@ -91,6 +113,65 @@ data class SkipRecord(
     val time: LocalTime = LocalTime.now(),
     val note: String? = null
 ) : Serializable
+
+/**
+ * True when the dose for [date] counts as a deliberate skip: any recorded
+ * non-taking outcome *except* a postponement. A delayed dose is resolved (it
+ * must stop reminding) but is not something the user refused, so it is counted
+ * separately wherever skips are.
+ */
+fun MedData.isSkipped(date: LocalDate): Boolean =
+    skipHistory[date]?.reason?.let { it != SkipReason.DELAYED } == true
+
+/** True when the snooze limit postponed the dose for [date] to its next slot. */
+fun MedData.isDelayed(date: LocalDate): Boolean =
+    skipHistory[date]?.reason == SkipReason.DELAYED
+
+/**
+ * Localized name of the reason. The strings ship in every locale; this is the
+ * mapping that lets anything explaining a skip use them.
+ */
+fun SkipReason.labelResId(): Int = when (this) {
+    SkipReason.ADVERSE_REACTION -> R.string.skip_reason_adverse_reaction
+    SkipReason.DOCTOR_DIRECTED -> R.string.skip_reason_doctor_directed
+    SkipReason.PROCEDURE_FASTING -> R.string.skip_reason_procedure_fasting
+    SkipReason.VITALS_OUT_OF_RANGE -> R.string.skip_reason_vitals_out_of_range
+    SkipReason.DOUBLE_DOSE_PROTECTION -> R.string.skip_reason_double_dose_protection
+    SkipReason.ACUTE_ILLNESS -> R.string.skip_reason_acute_illness
+    SkipReason.SUPPLY_MISSING -> R.string.skip_reason_supply_missing
+    SkipReason.SNOOZED_AWAY -> R.string.skip_reason_snoozed_away
+    SkipReason.DELAYED -> R.string.skip_reason_delayed
+    SkipReason.OTHER -> R.string.skip_reason_other
+}
+
+/**
+ * The line a card shows under its "Skipped" status: the reason, with the note
+ * the user typed appended to it. [reasonLabel] supplies the localized name.
+ *
+ * Returns null when the status line already says everything. A postponed dose
+ * reads as "Postponed", so its own label would just repeat that (and the app
+ * records no note for those).
+ */
+fun skipCardDetail(record: SkipRecord, reasonLabel: (SkipReason) -> String): String? {
+    val note = record.note?.takeIf { it.isNotBlank() }
+    val label = if (record.reason == SkipReason.DELAYED) null else reasonLabel(record.reason)
+    return listOfNotNull(label, note).joinToString(" — ").ifEmpty { null }
+}
+
+/**
+ * [this] with the note on [date]'s skip replaced — a note is usually written in
+ * a hurry, so it stays editable afterwards. A blank note clears it; the reason
+ * and the time are never touched. An item with no skip on [date] comes back
+ * unchanged, as does one whose note is already what was asked for.
+ */
+fun MedData.withSkipNote(date: LocalDate, note: String?): MedData {
+    val record = skipHistory[date] ?: return this
+    val cleaned = note?.trim()?.ifEmpty { null }
+    if (record.note == cleaned) return this
+    return copy(
+        skipHistory = HashMap(skipHistory).apply { put(date, record.copy(note = cleaned)) }
+    )
+}
 
 /** What kind of stock change produced a [SupplyChange] entry. */
 enum class SupplyChangeKind {
@@ -1387,6 +1468,13 @@ class MedViewModel(application: Application) : AndroidViewModel(application) {
         )
         saveData()
 
+        // Logging the dose here must also retire its reminder: without this the
+        // shade keeps offering a dose that is already recorded, inviting a
+        // second entry. Un-taking leaves the reminder alone.
+        if (!wasTaken) {
+            clearSnoozeState(longArrayOf(item.id), date)
+        }
+
         // Re-arm the alarm so a dose logged early (or un-done) updates the
         // schedule immediately, matching the notification's Take action.
         try {
@@ -1415,9 +1503,48 @@ class MedViewModel(application: Application) : AndroidViewModel(application) {
         _items[index] = current.copy(skipHistory = newSkips)
         saveData()
 
+        // Recording a skip (as opposed to un-skipping) also retires the pending
+        // reminder and snooze alarm for that dose.
+        if (newSkips.containsKey(date)) {
+            clearSnoozeState(longArrayOf(item.id), date)
+        }
+
         try {
             NotificationReceiver.scheduleNotification(getApplication(), _items[index])
         } catch (e: Exception) {
+        }
+    }
+
+    /**
+     * Edits the note recorded with an existing skip.
+     *
+     * Only the note moves: the reason, the time and the dose's taken state stay
+     * as they were, and the alarm is left alone because a skipped slot is
+     * already resolved. Nothing is written when the note is unchanged, so an
+     * accidental Save does not churn the store.
+     */
+    fun setSkipNote(item: MedData, date: LocalDate, note: String?) {
+        if (item.type != ItemType.Medicine) return
+
+        val index = _items.indexOfFirst { it.id == item.id }
+        if (index == -1) return
+        val updated = _items[index].withSkipNote(date, note)
+        if (updated == _items[index]) return
+
+        _items[index] = updated
+        saveData()
+    }
+
+    /**
+     * Drops the snooze tally and the posted reminder / pending snooze alarm for
+     * a dose that has just been logged or skipped from the app itself.
+     */
+    private fun clearSnoozeState(itemIds: LongArray, date: LocalDate) {
+        val context = getApplication<Application>()
+        try {
+            SnoozeTracker.clear(context, itemIds, date)
+            NotificationReceiver.cancelReminder(context, itemIds)
+        } catch (_: Exception) {
         }
     }
 

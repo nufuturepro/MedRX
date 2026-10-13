@@ -2,135 +2,136 @@
 
 package com.nukirk.medrx.elements.NotificationsSettingsActivity
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Snooze
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.ExperimentalTextApi
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import com.nukirk.medrx.R
 import com.nukirk.medrx.elements.SettingsActivity.TextButtonWithAnimatedShape
-import com.nukirk.medrx.ui.theme.GoogleSansFlex
+import com.nukirk.medrx.services.SnoozePolicy
 
+/**
+ * Localized snooze length: whole hours when the value divides evenly into
+ * hours, minutes otherwise.
+ */
+@Composable
+fun snoozeDurationText(minutes: Int): String {
+    val label = SnoozePolicy.label(minutes)
+    return if (label.useHours) {
+        stringResource(R.string.settings_snooze_duration_desc_hours, label.hours)
+    } else {
+        stringResource(R.string.settings_snooze_duration_desc, label.minutes)
+    }
+}
+
+/**
+ * Picks how long a snooze lasts: the common lengths, plus any custom value
+ * between [SnoozePolicy.MIN_DURATION_MINUTES] and
+ * [SnoozePolicy.MAX_DURATION_MINUTES].
+ */
 @Composable
 fun SnoozeDurationPopup(
     currentDuration: Int,
     onOptionSelected: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true),
-        icon = {
-            Icon(
-                imageVector = Icons.Rounded.Snooze,
-                contentDescription = null,
-                modifier = Modifier.size(32.dp),
-                tint = MaterialTheme.colorScheme.primary
+    val safeCurrent = SnoozePolicy.clampDuration(currentDuration)
+    var showCustom by remember { mutableStateOf(!SnoozePolicy.isPreset(safeCurrent)) }
+    var customText by remember { mutableStateOf(safeCurrent.toString()) }
+    var isInvalid by remember { mutableStateOf(false) }
+
+    OptionRadioPopup(
+        icon = Icons.Rounded.Snooze,
+        title = stringResource(R.string.settings_snooze_duration_title),
+        onDismiss = onDismiss
+    ) {
+        SnoozePolicy.DURATION_PRESETS.forEach { duration ->
+            RadioOptionRow(
+                label = snoozeDurationText(duration),
+                selected = !showCustom && safeCurrent == duration,
+                onClick = { onOptionSelected(duration) }
             )
-        },
-        title = {
-            Text(
-                text = stringResource(R.string.settings_snooze_duration_title),
-                fontFamily = GoogleSansFlex,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.headlineSmall
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .animateContentSize(
-                        spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessLow
-                        )
-                    ),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+        }
+
+        RadioOptionRow(
+            label = stringResource(R.string.settings_snooze_duration_custom),
+            selected = showCustom,
+            onClick = { showCustom = true }
+        )
+
+        if (showCustom) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                val options = listOf(5, 10, 15, 30)
-
-                options.forEach { duration ->
-                    val isSelected = currentDuration == duration
-                    val containerColor by animateColorAsState(
-                        targetValue = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessLow
-                        ),
-                        label = "containerColor"
-                    )
-                    val contentColor by animateColorAsState(
-                        targetValue = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessLow
-                        ),
-                        label = "contentColor"
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(containerColor)
-                            .clickable { onOptionSelected(duration) }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = isSelected,
-                            onClick = null
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = stringResource(R.string.settings_snooze_duration_desc, duration),
-                            fontFamily = GoogleSansFlex,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            ),
-                            color = contentColor
-                        )
-                    }
-                }
+                OutlinedTextField(
+                    value = customText,
+                    onValueChange = { typed ->
+                        customText = typed.filter { it.isDigit() }.take(3)
+                        isInvalid = false
+                    },
+                    label = { Text(stringResource(R.string.settings_snooze_duration_custom_hint)) },
+                    singleLine = true,
+                    isError = isInvalid,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
+                )
+                TextButtonWithAnimatedShape(
+                    onClick = {
+                        val minutes = customText.toIntOrNull()
+                        if (minutes == null ||
+                            minutes < SnoozePolicy.MIN_DURATION_MINUTES ||
+                            minutes > SnoozePolicy.MAX_DURATION_MINUTES
+                        ) {
+                            isInvalid = true
+                        } else {
+                            onOptionSelected(SnoozePolicy.clampDuration(minutes))
+                        }
+                    },
+                    text = stringResource(R.string.settings_snooze_duration_custom_apply)
+                )
             }
-        },
-        confirmButton = {
-            TextButtonWithAnimatedShape(
-                onClick = onDismiss,
-                text = stringResource(R.string.cancel_action)
+        }
+    }
+}
+
+/** Picks how many snoozes a dose gets before it is closed out as a skip. */
+@Composable
+fun SnoozeLimitPopup(
+    currentLimit: Int,
+    onOptionSelected: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val safeCurrent = SnoozePolicy.clampLimit(currentLimit)
+
+    OptionRadioPopup(
+        icon = Icons.Rounded.SkipNext,
+        title = stringResource(R.string.settings_snooze_limit_after_title),
+        onDismiss = onDismiss
+    ) {
+        SnoozePolicy.LIMIT_PRESETS.forEach { limit ->
+            RadioOptionRow(
+                label = stringResource(R.string.settings_snooze_limit_after_desc, limit),
+                selected = safeCurrent == limit,
+                onClick = { onOptionSelected(limit) }
             )
-        },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(32.dp),
-        tonalElevation = 6.dp
-    )
+        }
+    }
 }

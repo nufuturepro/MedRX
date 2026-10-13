@@ -65,6 +65,7 @@ import androidx.compose.material.icons.rounded.MedicalServices
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Restaurant
 import androidx.compose.material.icons.rounded.SelfImprovement
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material3.Button
@@ -281,6 +282,12 @@ class MainActivity : ComponentActivity() {
 
             var showWhatsNew by remember { mutableStateOf(false) }
 
+            // Gesture hint: sits above the cards until the user dismisses it
+            // once, then the pref keeps it away for good.
+            var showSwipeHint by remember {
+                mutableStateOf(!prefs.getBoolean("swipe_hint_shown", false))
+            }
+
             LaunchedEffect(currentVersionName) {
                 val seenVersion = prefs.getString("last_whatsnew_shown", null)
                 if (seenVersion == null) {
@@ -336,7 +343,12 @@ class MainActivity : ComponentActivity() {
                     presets = currentPresets,
                     useBottomSheet = useBottomSheet,
                     isExpandedScreen = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded,
-                    userDob = currentDob
+                    userDob = currentDob,
+                    showSwipeHint = showSwipeHint,
+                    onDismissSwipeHint = {
+                        showSwipeHint = false
+                        prefs.edit().putBoolean("swipe_hint_shown", true).apply()
+                    }
                 )
             }
         }
@@ -674,13 +686,40 @@ fun TimeSelectorItem(label: String, time: LocalTime, onClick: () -> Unit) {
     }
 }
 
+/** Direction a horizontal swipe resolves to once the finger lifts. */
+internal enum class SwipeOutcome { NONE, SKIP, DELETE }
+
+/**
+ * Turns a drag offset into the action it commits to. A swipe has to clear half
+ * the card's width to count, and a right swipe only resolves to [SwipeOutcome.SKIP]
+ * when the card actually offers a skip — so a non-dose item never reveals a skip
+ * action it cannot honour.
+ */
+internal fun resolveSwipeOutcome(offsetX: Float, width: Float, skipEnabled: Boolean): SwipeOutcome {
+    if (width <= 0f) return SwipeOutcome.NONE
+    val threshold = width * 0.5f
+    return when {
+        offsetX <= -threshold -> SwipeOutcome.DELETE
+        skipEnabled && offsetX >= threshold -> SwipeOutcome.SKIP
+        else -> SwipeOutcome.NONE
+    }
+}
+
+/**
+ * Wraps a card so it can be swiped horizontally: right to skip a dose (only
+ * when [skipEnabled]) and left to ask for deletion. The card always springs
+ * back to rest before the action runs, so a confirmation dialog never opens
+ * behind a half-dragged card.
+ */
 @Composable
 fun SwipeableSquishItem(
     item: MedData,
     shape: androidx.compose.ui.graphics.Shape,
-    onDeleteThresholdReached: (() -> Unit) -> Unit,
+    onDeleteRequested: () -> Unit,
     onSwipeStart: () -> Unit,
     onSwipeCancel: () -> Unit,
+    skipEnabled: Boolean = false,
+    onSkipRequested: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
@@ -690,6 +729,8 @@ fun SwipeableSquishItem(
     val isDark = isSystemInDarkTheme()
     val deleteBackgroundColor = if (isDark) Color(0xFFF2B8B5) else Color(0xFFB3261E)
     val deleteIconColor = if (isDark) Color(0xFF601410) else Color(0xFFFFFFFF)
+    val skipBackgroundColor = if (isDark) Color(0xFFB6F0C6) else Color(0xFF2E7D46)
+    val skipIconColor = if (isDark) Color(0xFF0B3B1C) else Color(0xFFFFFFFF)
 
     Layout(
         modifier = Modifier
@@ -700,60 +741,103 @@ fun SwipeableSquishItem(
                 orientation = Orientation.Horizontal,
                 state = rememberDraggableState { delta ->
                     scope.launch {
-                        val newVal = (offsetX.value + delta).coerceIn(0f, itemWidth)
+                        // A right drag only travels when there is a skip to
+                        // reveal, so ineligible cards simply do not move that way.
+                        val maxRight = if (skipEnabled) itemWidth else 0f
+                        val newVal = (offsetX.value + delta).coerceIn(-itemWidth, maxRight)
                         offsetX.snapTo(newVal)
                     }
                 },
                 onDragStarted = { onSwipeStart() },
                 onDragStopped = {
-                    val threshold = itemWidth * 0.5f
-                    if (offsetX.value > threshold) {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        scope.launch {
-                            offsetX.animateTo(itemWidth, spring(stiffness = Spring.StiffnessMedium))
-                            val resetAnim = { scope.launch { offsetX.snapTo(0f) } }
-                            onDeleteThresholdReached { resetAnim.invoke(); Unit }
+                    val settled = spring<Float>(stiffness = Spring.StiffnessMedium)
+                    when (resolveSwipeOutcome(offsetX.value, itemWidth, skipEnabled)) {
+                        SwipeOutcome.SKIP -> {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            scope.launch {
+                                offsetX.animateTo(0f, settled)
+                                onSkipRequested?.invoke()
+                                onSwipeCancel()
+                            }
                         }
-                    } else {
-                        scope.launch {
-                            offsetX.animateTo(0f, spring(stiffness = Spring.StiffnessMedium))
+
+                        SwipeOutcome.DELETE -> {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            scope.launch {
+                                offsetX.animateTo(0f, settled)
+                                onDeleteRequested()
+                                onSwipeCancel()
+                            }
+                        }
+
+                        SwipeOutcome.NONE -> scope.launch {
+                            offsetX.animateTo(0f, settled)
                             onSwipeCancel()
                         }
                     }
                 }
             ),
         content = {
+            // Order matters: measurables are addressed by index in the layout
+            // block below — [0] content, [1] delete reveal, [2] skip reveal.
+            Box { content() }
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(100.dp))
+                    .fillMaxSize()
+                    .clip(shape)
                     .background(deleteBackgroundColor),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.CenterEnd
             ) {
                 Icon(
                     Icons.Rounded.Delete,
                     contentDescription = null,
-                    tint = deleteIconColor
+                    tint = deleteIconColor,
+                    modifier = Modifier.padding(end = 24.dp)
                 )
             }
-            Box { content() }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(shape)
+                    .background(skipBackgroundColor),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Icon(
+                    Icons.Rounded.SkipNext,
+                    contentDescription = null,
+                    tint = skipIconColor,
+                    modifier = Modifier.padding(start = 24.dp)
+                )
+            }
         }
     ) { measurables, constraints ->
         val totalWidth = constraints.maxWidth
         val currentOffsetX = offsetX.value
-        val contentPlaceable = measurables[1].measure(constraints)
+        val contentPlaceable = measurables[0].measure(constraints)
         val height = contentPlaceable.height
-        val redBoxWidth = currentOffsetX.toInt().coerceAtLeast(0)
-        val redPlaceable = measurables[0].measure(
+        // Positive offset uncovers the left edge (skip); negative the right (delete).
+        val skipWidth = currentOffsetX.toInt().coerceAtLeast(0)
+        val deleteWidth = (-currentOffsetX).toInt().coerceAtLeast(0)
+        val deletePlaceable = measurables[1].measure(
             Constraints(
-                minWidth = redBoxWidth,
-                maxWidth = redBoxWidth,
+                minWidth = deleteWidth,
+                maxWidth = deleteWidth,
+                minHeight = height,
+                maxHeight = height
+            )
+        )
+        val skipPlaceable = measurables[2].measure(
+            Constraints(
+                minWidth = skipWidth,
+                maxWidth = skipWidth,
                 minHeight = height,
                 maxHeight = height
             )
         )
         layout(totalWidth, height) {
-            redPlaceable.place(0, 0)
-            contentPlaceable.place(redBoxWidth, 0)
+            skipPlaceable.place(0, 0)
+            deletePlaceable.place(totalWidth - deleteWidth, 0)
+            contentPlaceable.place(currentOffsetX.toInt(), 0)
         }
     }
 }

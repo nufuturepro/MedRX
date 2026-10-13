@@ -118,4 +118,59 @@ class MedicationVersionAndSupplyTest {
         val tablet = medicine(1, 1, supplyUnit = SupplyUnit.TABLET)
         assertFalse(tablet.supplyEstimated)
     }
+
+    // ------------------------------------------------- take and skip are exclusive
+
+    private fun skipped(vararg days: LocalDate) = medicine(1, 10).copy(
+        skipHistory = HashMap<LocalDate, SkipRecord>().apply {
+            days.forEach { put(it, SkipRecord(SkipReason.DOCTOR_DIRECTED, LocalTime.of(9, 0))) }
+        }
+    )
+
+    @Test
+    fun `logging a take clears a skip recorded for the same day`() {
+        val taken = InventoryService.applyTakeIfNew(null, skipped(day), day, true, LocalTime.NOON)
+
+        assertTrue(taken.takenHistory.containsKey(day))
+        assertTrue(taken.skipHistory.isEmpty())
+        assertFalse(taken.isSkipped(day))
+    }
+
+    @Test
+    fun `taking a dose leaves skips on other days alone`() {
+        val other = day.minusDays(1)
+        val taken = InventoryService.applyTakeIfNew(null, skipped(day, other), day, true, LocalTime.NOON)
+
+        assertEquals(setOf(other), taken.skipHistory.keys)
+        assertTrue(taken.isSkipped(other))
+        assertFalse(taken.isSkipped(day))
+    }
+
+    @Test
+    fun `un-taking does not resurrect the cleared skip`() {
+        val taken = InventoryService.applyTakeIfNew(null, skipped(day), day, true, LocalTime.NOON)
+        val untaken = InventoryService.applyTakeIfNew(null, taken, day, false)
+
+        assertFalse(untaken.takenHistory.containsKey(day))
+        assertTrue(untaken.skipHistory.isEmpty())
+    }
+
+    @Test
+    fun `a take on an unskipped day never invents a skip`() {
+        val taken = InventoryService.applyTakeIfNew(null, medicine(1, 10), day, true, LocalTime.NOON)
+
+        assertTrue(taken.takenHistory.containsKey(day))
+        assertTrue(taken.skipHistory.isEmpty())
+    }
+
+    @Test
+    fun `a delayed dose does not survive being taken`() {
+        val delayed = medicine(1, 10).copy(
+            skipHistory = hashMapOf(day to SkipRecord(SkipReason.DELAYED, LocalTime.of(9, 0)))
+        )
+        val taken = InventoryService.applyTakeIfNew(null, delayed, day, true, LocalTime.NOON)
+
+        assertTrue(taken.takenHistory.containsKey(day))
+        assertFalse(taken.isDelayed(day))
+    }
 }

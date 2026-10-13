@@ -62,11 +62,12 @@ jobs:
             **Med Rx is a community fork of [Med by FeDeveloper95](https://github.com/FeDeveloper95/Med) (Apache 2.0), maintained by nukirk.**
 
             ## What's new
-            - **New launcher icon**: a health-metrics mark (phone and Wear OS, including themed icons), replacing the old heart artwork
-            - **Redesigned editor bottom bar**: Cancel and Save sit side by side; "Start new version" and "Archive med" moved into a "More actions" toggle
-            - **Collapsible supply ledger** on med cards
-            - **Archived-medications manager**: restore or permanently delete archived meds, each with a confirmation dialog; deletion is blocked unless every entry in the group is archived
-            - **Safer archiving**: archiving backdates the end date from your last logged activity (capped at yesterday), so restoring and re-archiving can no longer manufacture phantom missed doses in Stats
+            - **A snooze limit that ends the loop**: cap repeated snoozes and choose what the dose becomes — a recorded skip, or a postponement to its next scheduled slot. A reminder that keeps getting pushed can no longer quietly fall off the adherence record
+            - **Postponed doses are their own state**: a dose delayed by the limit is tracked separately from true skips and misses in Stats, the calendar legend and the card, and is never counted as refused
+            - **Swipe the card**: right to skip a dose, left to delete it — both behind a confirmation, and the delete snackbar offers Undo. A one-time hint teaches the gestures
+            - **Skips explain themselves**: the clinical reason and your note now appear on the med card, and the note stays editable by tapping that line — no un-skip and re-skip to fix a hurried note
+            - **Localized clinical reasons**: reason chips and card labels now use the translated reason strings in every supported language
+            - **Custom snooze durations**: snooze in whole hours or a custom minute length, set from the alarm
 
             ## Fork features
             - Symptom logging with severity (mild / moderate / severe) and an editable date and time
@@ -82,7 +83,7 @@ jobs:
             - Download **MedRx-…-phone.apk** for your phone
             - Download **MedRx-…-wear.apk** for Wear OS (install on the watch)
             - Minimum Android 8.0 (API 26); watch requires Wear OS 3+
-            - Updating from Med Rx 2.2.0-fork.1 or earlier? Install straight over it — same app, all data stays.
+            - Updating from Med Rx 2.2.2-fork.1 or earlier? Install straight over it — same app (`com.nukirk.medrx`), same signing key, all data stays. Version 2.2.3-fork.1 is versionCode 25.
             - Coming from the original Med app? Install alongside — your data migrates via in-app backup/restore or CSV export/import.
           files: |
             app/build/outputs/apk/release/*.apk
@@ -115,7 +116,7 @@ jobs:
 
           **Med Rx is a community fork of [Med by FeDeveloper95](https://github.com/FeDeveloper95/Med) (Apache 2.0).**
 
-          New in this build: a new health-metrics launcher icon (phone and Wear OS), a streamlined med editor bottom bar with a "More actions" toggle, a collapsible supply ledger, a proper archived-medications manager with restore/delete confirmations, and self-healing archive dates so Stats can never accumulate phantom missed doses from re-archiving. The full fork feature set (dose skipping with clinical reasons, pre-skip planning, the supply ledger, PRN support, symptom logging, the skipped-dose doctor report, the Android 14 dose-reduction crash fix) is unchanged. Details are in the release notes.
+          New in this build: a snooze limit that converts repeated snoozes into a recorded skip or a postponement to the next scheduled slot (tracked separately from missed doses), swipe gestures on med cards — right to skip, left to delete, both behind a confirmation and with Undo on delete — skip reasons and notes shown on the card with the note editable afterwards, a one-time hint for the gestures, custom snooze lengths, and clinical reason labels that now use the translated strings. Version 2.2.3-fork.1 is versionCode 25, signed with the same key as 2.2.2, so installing straight over it keeps your data. The full fork feature set (dose skipping with clinical reasons, pre-skip planning, the supply ledger, PRN support, symptom logging, the skipped-dose doctor report, the Android 14 dose-reduction crash fix) is unchanged. Details are in the release notes.
 
           Questions or problems? Open an issue, or ask here in Discussions — every release gets a thread like this one.
           EOF

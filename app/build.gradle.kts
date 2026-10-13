@@ -26,8 +26,8 @@ android {
         applicationId = "com.nukirk.medrx"
         minSdk = 26
         targetSdk = 37
-        versionCode = 24
-        versionName = "2.2.2-fork.1"
+        versionCode = 25
+        versionName = "2.2.3-fork.1"
     }
 
     signingConfigs {

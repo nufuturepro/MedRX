@@ -45,6 +45,8 @@ object SkipReport {
         SkipReason.DOUBLE_DOSE_PROTECTION -> "Double dose protection"
         SkipReason.ACUTE_ILLNESS -> "Acute illness / vomiting"
         SkipReason.SUPPLY_MISSING -> "Missing supply / expired"
+        SkipReason.SNOOZED_AWAY -> "Snoozed away (reminder limit)"
+        SkipReason.DELAYED -> "Delayed to the next dose"
         SkipReason.OTHER -> "Patient discretion / other"
     }
 

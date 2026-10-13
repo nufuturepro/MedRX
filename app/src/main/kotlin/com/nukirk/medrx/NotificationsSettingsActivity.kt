@@ -44,8 +44,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.Autorenew
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Snooze
 import androidx.compose.material.icons.rounded.Swipe
 import androidx.compose.material3.ButtonGroupDefaults
@@ -97,11 +100,24 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.nukirk.medrx.elements.NotificationsSettingsActivity.SnoozeDurationPopup
+import com.nukirk.medrx.elements.NotificationsSettingsActivity.SnoozeLimitPopup
+import com.nukirk.medrx.elements.NotificationsSettingsActivity.snoozeDurationText
+import com.nukirk.medrx.services.SnoozeLimitAction
+import com.nukirk.medrx.services.SnoozePolicy
 import com.nukirk.medrx.ui.theme.GoogleSansFlex
 import com.nukirk.medrx.ui.theme.MedTheme
 
 const val PREF_FULL_SCREEN_ALARM = "pref_full_screen_alarm"
 const val PREF_SNOOZE_DURATION = "pref_snooze_duration"
+
+/** Whether repeatedly snoozing a dose eventually turns it into a skip. */
+const val PREF_SNOOZE_LIMIT_ENABLED = "pref_snooze_limit_enabled"
+
+/** How many snoozes a dose gets before that conversion happens. */
+const val PREF_SNOOZE_LIMIT = "pref_snooze_limit"
+
+/** What the dose becomes at the limit: a skip or a delay ([SnoozeLimitAction]). */
+const val PREF_SNOOZE_LIMIT_ACTION = "pref_snooze_limit_action"
 const val PREF_ALARM_STYLE_SLIDER = "pref_alarm_style_slider"
 const val PREF_SHOW_NOTIFICATIONS = "pref_show_notifications"
 
@@ -257,9 +273,32 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
         )
     }
 
-    var snoozeDuration by remember { mutableIntStateOf(prefs.getInt(PREF_SNOOZE_DURATION, 10)) }
+    var snoozeDuration by remember {
+        mutableIntStateOf(
+            prefs.getInt(
+                PREF_SNOOZE_DURATION,
+                SnoozePolicy.DEFAULT_SNOOZE_DURATION_MINUTES
+            )
+        )
+    }
 
     var showSnoozeDialog by remember { mutableStateOf(false) }
+
+    var snoozeLimitEnabled by remember {
+        mutableStateOf(prefs.getBoolean(PREF_SNOOZE_LIMIT_ENABLED, false))
+    }
+
+    var snoozeLimit by remember {
+        mutableIntStateOf(prefs.getInt(PREF_SNOOZE_LIMIT, SnoozePolicy.DEFAULT_SNOOZE_LIMIT))
+    }
+
+    var showSnoozeLimitDialog by remember { mutableStateOf(false) }
+
+    var snoozeLimitAction by remember {
+        mutableStateOf(
+            SnoozeLimitAction.fromPref(prefs.getString(PREF_SNOOZE_LIMIT_ACTION, null))
+        )
+    }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -418,7 +457,7 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
                             containerColor = Color(0xFFffb4ab),
                             iconColor = Color(0xFF690005),
                             index = 0,
-                            count = 3,
+                            count = 6,
                             checked = fullScreenAlarm,
                             enabled = showNotifications,
                             onCheckedChange = {
@@ -435,7 +474,7 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
                             containerColor = Color(0xFFa1c9ff),
                             iconColor = Color(0xFF0641a0),
                             index = 1,
-                            count = 3,
+                            count = 6,
                             options = listOf(
                                 stringResource(R.string.settings_alarm_style_slider),
                                 stringResource(R.string.settings_alarm_style_buttons)
@@ -453,16 +492,70 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
                         NotificationSegmentedItem(
                             icon = Icons.Rounded.Snooze,
                             title = stringResource(R.string.settings_snooze_duration_title),
-                            subtitle = stringResource(
-                                R.string.settings_snooze_duration_desc,
-                                snoozeDuration
-                            ),
+                            subtitle = snoozeDurationText(snoozeDuration),
                             containerColor = Color(0xFFffb683),
                             iconColor = Color(0xFF753403),
                             index = 2,
-                            count = 3,
+                            count = 6,
                             enabled = showNotifications,
                             onClick = { showSnoozeDialog = true }
+                        )
+
+                        NotificationSegmentedSwitchItem(
+                            icon = Icons.Rounded.SkipNext,
+                            title = stringResource(R.string.settings_snooze_limit_title),
+                            subtitle = stringResource(R.string.settings_snooze_limit_desc),
+                            containerColor = Color(0xFFb6f0c0),
+                            iconColor = Color(0xFF0a5220),
+                            index = 3,
+                            count = 6,
+                            checked = snoozeLimitEnabled,
+                            enabled = showNotifications,
+                            onCheckedChange = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                snoozeLimitEnabled = it
+                                prefs.edit().putBoolean(PREF_SNOOZE_LIMIT_ENABLED, it).apply()
+                            }
+                        )
+
+                        NotificationSegmentedItem(
+                            icon = Icons.Rounded.Schedule,
+                            title = stringResource(R.string.settings_snooze_limit_after_title),
+                            subtitle = stringResource(
+                                R.string.settings_snooze_limit_after_desc,
+                                snoozeLimit
+                            ),
+                            containerColor = Color(0xFFe0c8ff),
+                            iconColor = Color(0xFF4a2a7a),
+                            index = 4,
+                            count = 6,
+                            enabled = showNotifications && snoozeLimitEnabled,
+                            onClick = { showSnoozeLimitDialog = true }
+                        )
+
+                        NotificationSegmentedButtonGroupItem(
+                            icon = Icons.Rounded.Autorenew,
+                            title = stringResource(R.string.settings_snooze_limit_action_title),
+                            subtitle = stringResource(R.string.settings_snooze_limit_action_desc),
+                            containerColor = Color(0xFFffd6e8),
+                            iconColor = Color(0xFF7a1f4c),
+                            index = 5,
+                            count = 6,
+                            options = listOf(
+                                stringResource(R.string.settings_snooze_limit_action_skip),
+                                stringResource(R.string.settings_snooze_limit_action_delay)
+                            ),
+                            selectedIndex = if (snoozeLimitAction == SnoozeLimitAction.DELAY) 1 else 0,
+                            enabled = showNotifications && snoozeLimitEnabled,
+                            onOptionSelected = { index ->
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                val action =
+                                    if (index == 1) SnoozeLimitAction.DELAY else SnoozeLimitAction.SKIP
+                                snoozeLimitAction = action
+                                prefs.edit()
+                                    .putString(PREF_SNOOZE_LIMIT_ACTION, action.name)
+                                    .apply()
+                            }
                         )
                     }
                 }
@@ -481,6 +574,18 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
                 showSnoozeDialog = false
             },
             onDismiss = { showSnoozeDialog = false }
+        )
+    }
+
+    if (showSnoozeLimitDialog && showNotifications && snoozeLimitEnabled) {
+        SnoozeLimitPopup(
+            currentLimit = snoozeLimit,
+            onOptionSelected = { limit ->
+                snoozeLimit = limit
+                prefs.edit().putInt(PREF_SNOOZE_LIMIT, limit).apply()
+                showSnoozeLimitDialog = false
+            },
+            onDismiss = { showSnoozeLimitDialog = false }
         )
     }
 }

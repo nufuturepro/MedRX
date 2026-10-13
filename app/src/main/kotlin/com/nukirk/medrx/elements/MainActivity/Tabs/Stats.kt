@@ -1,5 +1,6 @@
 @file:OptIn(
     ExperimentalMaterial3ExpressiveApi::class,
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
     androidx.compose.ui.text.ExperimentalTextApi::class,
     ExperimentalFoundationApi::class,
     ExperimentalMaterial3Api::class
@@ -23,6 +24,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -44,6 +46,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -78,6 +81,8 @@ import com.nukirk.medrx.ItemType
 import com.nukirk.medrx.R
 import com.nukirk.medrx.services.MedData
 import com.nukirk.medrx.services.MedViewModel
+import com.nukirk.medrx.services.isDelayed
+import com.nukirk.medrx.services.isSkipped
 import com.nukirk.medrx.ui.theme.GoogleSansFlex
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -92,7 +97,14 @@ enum class DayStatus {
     ALL_TAKEN, PARTIAL, NONE_TAKEN, NO_MEDS, FUTURE,
 
     /** Every scheduled dose accounted for, at least one via a recorded skip. */
-    SKIPPED
+    SKIPPED,
+
+    /**
+     * Every scheduled dose accounted for, at least one of them postponed to a
+     * later dose. Nothing that day was actually missed, so the day must not be
+     * painted like a missed one; it gets its own colour.
+     */
+    DELAYED
 }
 
 fun getScheduledMedsForDate(date: LocalDate, items: List<MedData>): List<MedData> {
@@ -119,18 +131,31 @@ fun getStatusForDate(date: LocalDate, items: List<MedData>): DayStatus {
     if (scheduledMeds.isEmpty()) return DayStatus.NO_MEDS
 
     val takenCount = scheduledMeds.count { it.takenHistory.containsKey(date) }
-    val skippedCount = scheduledMeds.count { it.skipHistory.containsKey(date) }
+    // A postponed dose removes itself from the day's outstanding work (it stops
+    // reminding, and the next dose picks it up), so unlike before it *does*
+    // resolve the day — but as its own delayed state, never as a skip, and it
+    // still earns no adherence credit elsewhere.
+    val skippedCount = scheduledMeds.count { it.isSkipped(date) }
+    val delayedCount = scheduledMeds.count { it.isDelayed(date) }
+    val accounted = takenCount + skippedCount + delayedCount
 
     return when {
-        takenCount + skippedCount == 0 -> DayStatus.NONE_TAKEN
+        accounted == 0 -> DayStatus.NONE_TAKEN
         // Fully accounted: all taken, or a mix of taken + skipped / all skipped.
         takenCount == scheduledMeds.size -> DayStatus.ALL_TAKEN
-        takenCount + skippedCount == scheduledMeds.size -> DayStatus.SKIPPED
+        accounted == scheduledMeds.size ->
+            if (delayedCount > 0) DayStatus.DELAYED else DayStatus.SKIPPED
         else -> DayStatus.PARTIAL
     }
-}    /** Number of recorded skips across all meds scheduled on [date]. */
+}
+
+/**
+     * Number of recorded skips across all meds scheduled on [date]. Doses the
+     * snooze limit postponed are excluded: they are counted as delayed, not as
+     * skips, everywhere else too.
+     */
     fun getSkipCountForDate(date: LocalDate, items: List<MedData>): Int =
-        getScheduledMedsForDate(date, items).count { it.skipHistory.containsKey(date) }
+        getScheduledMedsForDate(date, items).count { it.isSkipped(date) }
 
 data class MedicationStats(
     val instanceKey: String,
@@ -140,8 +165,14 @@ data class MedicationStats(
     val scheduled: Int,
     val taken: Int,
     val skipped: Int,
+    val delayed: Int,
     val missed: Int
 ) {
+    /**
+     * Doses the user actually acted on. A postponed dose is deliberately not
+     * credited: it was moved, not taken, so allowing it to raise the score
+     * would let repeated delaying hide behind a healthy percentage.
+     */
     val adherence: Int
         get() = if (scheduled == 0) 0 else ((taken + skipped) * 100f / scheduled).toInt()
 }
@@ -158,6 +189,7 @@ fun getMedicationStatsForMonth(month: YearMonth, items: List<MedData>): List<Med
             var scheduled = 0
             var taken = 0
             var skipped = 0
+            var delayed = 0
             var date = month.atDay(1)
             while (!date.isAfter(end)) {
                 val slot = items.firstOrNull {
@@ -171,7 +203,8 @@ fun getMedicationStatsForMonth(month: YearMonth, items: List<MedData>): List<Med
                 if (slot != null) {
                     scheduled++
                     if (slot.takenHistory.containsKey(date)) taken++
-                    else if (slot.skipHistory.containsKey(date)) skipped++
+                    else if (slot.isDelayed(date)) delayed++
+                    else if (slot.isSkipped(date)) skipped++
                 }
                 date = date.plusDays(1)
             }
@@ -179,12 +212,12 @@ fun getMedicationStatsForMonth(month: YearMonth, items: List<MedData>): List<Med
                 instanceKey = seed.medicationInstanceKey(),
                 treatmentKey = seed.treatmentKey(),
                 title = seed.title,
-                doseLabel = listOfNotNull(seed.doseAmount, seed.doseUnit).joinToString(" ").ifBlank { "—" },
-                scheduled = scheduled,
-                taken = taken,
-                skipped = skipped,
-                missed = scheduled - taken - skipped
-            )
+                doseLabel = listOfNotNull(seed.doseAmount, seed.doseUnit).joinToString(" ").ifBlank { "—" },                    scheduled = scheduled,
+                    taken = taken,
+                    skipped = skipped,
+                    delayed = delayed,
+                    missed = scheduled - taken - skipped - delayed
+                )
         }
         .filter { it.scheduled > 0 }
         .sortedWith(compareBy({ it.title }, { it.doseLabel }, { it.instanceKey }))
@@ -219,6 +252,95 @@ fun getPrnStatsForMonth(month: java.time.YearMonth, items: List<MedData>): List<
         .sortedWith(compareBy({ it.title.lowercase() }, { it.doseLabel }))
 }
 
+/** Headline numbers for the month shown in [StatsSummaryCard]. */
+internal data class MonthlySummary(
+    val streak: Int,
+    val adherence: Int,
+    val missedPerWeek: String,
+    val delayed: Int
+)
+
+/**
+ * The month's headline numbers, kept as a pure function of the data so the
+ * arithmetic can be checked against the per-day statuses and the per-medication
+ * buckets it summarises. [today] is a parameter rather than a clock reading so
+ * the rollup is deterministic under test.
+ *
+ * Today is special: its doses only enter the totals once at least one has been
+ * taken (an untouched morning must not drag the visible score down mid-day),
+ * and while it is unaccounted it neither extends nor breaks a streak.
+ */
+internal fun computeMonthlySummary(
+    month: YearMonth,
+    items: List<MedData>,
+    today: LocalDate
+): MonthlySummary {
+    val meds = items.filter { it.type == ItemType.Medicine }
+    var streakCalc = 0
+    var adherenceCalc = 0
+    var missedPerWeekCalc = "0.0"
+    var delayedCalc = 0
+
+    if (meds.isNotEmpty()) {
+        val monthStart = month.atDay(1)
+        val monthEnd = month.atEndOfMonth()
+
+        if (!monthStart.isAfter(today)) {
+            val evalEnd = if (monthEnd.isAfter(today)) today else monthEnd
+
+            var totalScheduled = 0
+            var totalTaken = 0
+            var totalMissed = 0
+            var totalDelayed = 0
+
+            var currentStreak = 0
+            var maxStreak = 0
+
+            var dateCursor = monthStart
+            while (!dateCursor.isAfter(evalEnd)) {
+                val scheduled = getScheduledMedsForDate(dateCursor, meds)
+                if (scheduled.isNotEmpty()) {
+                    val takenCount = scheduled.count { it.takenHistory.containsKey(dateCursor) }
+                    val skippedCount = scheduled.count { it.isSkipped(dateCursor) }
+                    val delayedCount = scheduled.count { it.isDelayed(dateCursor) }
+                    val scheduledCount = scheduled.size
+
+                    val countForStats = !dateCursor.isEqual(today) || takenCount > 0
+
+                    if (countForStats) {
+                        totalScheduled += scheduledCount
+                        totalTaken += takenCount + skippedCount
+                        // Postponed doses are reported on their own line, so
+                        // they stay out of "missed" here while still
+                        // dragging adherence above.
+                        totalMissed += (scheduledCount - takenCount - skippedCount - delayedCount)
+                        totalDelayed += delayedCount
+                    }
+
+                    // A postponed dose must not extend a streak either.
+                    if (takenCount + skippedCount == scheduledCount && scheduledCount > 0) {
+                        currentStreak++
+                        if (currentStreak > maxStreak) maxStreak = currentStreak
+                    } else if (countForStats) {
+                        currentStreak = 0
+                    }
+                }
+                dateCursor = dateCursor.plusDays(1)
+            }
+
+            streakCalc = maxStreak
+            adherenceCalc =
+                if (totalScheduled > 0) (totalTaken * 100f / totalScheduled).toInt() else 0
+            val totalDays =
+                Math.max(1L, ChronoUnit.DAYS.between(monthStart, evalEnd.plusDays(1)))
+            val weeks = Math.max(1f, totalDays / 7f)
+            missedPerWeekCalc = String.format(Locale.US, "%.1f", totalMissed / weeks)
+            delayedCalc = totalDelayed
+        }
+    }
+    return MonthlySummary(streakCalc, adherenceCalc, missedPerWeekCalc, delayedCalc)
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun StatsTab(
@@ -249,65 +371,13 @@ fun StatsTab(
     }
 
     val stats = remember(currentMonth, allMeds, today) {
-        var streakCalc = 0
-        var adherenceCalc = 0
-        var missedPerWeekCalc = "0.0"
-
-        if (allMeds.isNotEmpty()) {
-            val monthStart = currentMonth.atDay(1)
-            val monthEnd = currentMonth.atEndOfMonth()
-
-            if (!monthStart.isAfter(today)) {
-                val evalEnd = if (monthEnd.isAfter(today)) today else monthEnd
-
-                var totalScheduled = 0
-                var totalTaken = 0
-                var totalMissed = 0
-
-                var currentStreak = 0
-                var maxStreak = 0
-
-                var dateCursor = monthStart
-                while (!dateCursor.isAfter(evalEnd)) {
-                    val scheduled = getScheduledMedsForDate(dateCursor, allMeds)
-                    if (scheduled.isNotEmpty()) {
-                        val takenCount = scheduled.count { it.takenHistory.containsKey(dateCursor) }
-                        val skippedCount = scheduled.count { it.skipHistory.containsKey(dateCursor) }
-                        val scheduledCount = scheduled.size
-
-                        val countForStats = !dateCursor.isEqual(today) || takenCount > 0
-
-                        if (countForStats) {
-                            totalScheduled += scheduledCount
-                            totalTaken += takenCount + skippedCount
-                            totalMissed += (scheduledCount - takenCount - skippedCount)
-                        }
-
-                        if (takenCount + skippedCount == scheduledCount && scheduledCount > 0) {
-                            currentStreak++
-                            if (currentStreak > maxStreak) maxStreak = currentStreak
-                        } else if (countForStats) {
-                            currentStreak = 0
-                        }
-                    }
-                    dateCursor = dateCursor.plusDays(1)
-                }
-
-                streakCalc = maxStreak
-                adherenceCalc =
-                    if (totalScheduled > 0) (totalTaken * 100f / totalScheduled).toInt() else 0
-                val totalDays =
-                    Math.max(1L, ChronoUnit.DAYS.between(monthStart, evalEnd.plusDays(1)))
-                val weeks = Math.max(1f, totalDays / 7f)
-                missedPerWeekCalc = String.format(Locale.US, "%.1f", totalMissed / weeks)
-            }
-        }
-        Triple(streakCalc, adherenceCalc, missedPerWeekCalc)
+        computeMonthlySummary(currentMonth, allMeds, today)
     }
 
-    val streak = stats.first
-    val adherence = stats.second
-    val missedPerWeekStr = stats.third
+    val streak = stats.streak
+    val adherence = stats.adherence
+    val missedPerWeekStr = stats.missedPerWeek
+    val delayedStr = stats.delayed.toString()
 
     var isRefreshing by remember { mutableStateOf(false) }
     val pullRefreshState = rememberPullToRefreshState()
@@ -362,6 +432,7 @@ fun StatsTab(
                                     streak = streak.toString(),
                                     adherence = "$adherence%",
                                     missedPerWeek = missedPerWeekStr,
+                                    delayed = delayedStr,
                                     isVertical = true
                                 )
                             }
@@ -382,6 +453,7 @@ fun StatsTab(
                                 streak = streak.toString(),
                                 adherence = "$adherence%",
                                 missedPerWeek = missedPerWeekStr,
+                                delayed = delayedStr,
                                 isVertical = false
                             )
                             Spacer(modifier = Modifier.height(24.dp))
@@ -476,7 +548,7 @@ private fun MedicationBreakdownCard(
                 )
                 instances.filter { it.treatmentKey == treatment.treatmentKey && it.title == treatment.title }.forEach { stats ->
                     Text(
-                        text = "  ${stats.doseLabel}: ${stats.adherence}% · ${stats.taken} ${stringResource(R.string.stats_taken_short)}, ${stats.skipped} ${stringResource(R.string.stats_skipped_short)}, ${stats.missed} ${stringResource(R.string.stats_missed_short)}",
+                        text = "  ${stats.doseLabel}: ${stats.adherence}% · ${stats.taken} ${stringResource(R.string.stats_taken_short)}, ${stats.skipped} ${stringResource(R.string.stats_skipped_short)}, ${stats.delayed} ${stringResource(R.string.stats_delayed_short)}, ${stats.missed} ${stringResource(R.string.stats_missed_short)}",
                         style = MaterialTheme.typography.bodyMedium,
                         fontFamily = GoogleSansFlex,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -487,13 +559,62 @@ private fun MedicationBreakdownCard(
     }
 }
 
+/** One tile of [StatsSummaryCard]; declared once so both layouts stay in sync. */
+private data class StatTile(
+    val icon: ImageVector,
+    val value: String,
+    val label: String,
+    val iconColor: Color,
+    val containerColor: Color,
+    val backgroundRes: Int
+)
+
 @Composable
 fun StatsSummaryCard(
     streak: String,
     adherence: String,
     missedPerWeek: String,
+    delayed: String,
     isVertical: Boolean = false
 ) {
+    // A postponed dose is deliberately not credited as on-time, but from the
+    // calendar down it must not look like a miss either: the delayed tile (and
+    // the matching calendar colour) is where that action shows up instead.
+    val tiles = listOf(
+        StatTile(
+            icon = Icons.Rounded.LocalFireDepartment,
+            value = streak,
+            label = stringResource(R.string.stats_streak_label),
+            iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            backgroundRes = R.drawable.ic_ghost
+        ),
+        StatTile(
+            icon = Icons.Rounded.CheckCircle,
+            value = adherence,
+            label = stringResource(R.string.stats_on_time_label),
+            iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            backgroundRes = R.drawable.ic_twelve_sided_cookie
+        ),
+        StatTile(
+            icon = Icons.Rounded.Schedule,
+            value = delayed,
+            label = stringResource(R.string.stats_delayed_label),
+            iconColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            backgroundRes = R.drawable.ic_gem
+        ),
+        StatTile(
+            icon = Icons.Rounded.Warning,
+            value = missedPerWeek,
+            label = stringResource(R.string.stats_missed_label),
+            iconColor = MaterialTheme.colorScheme.onErrorContainer,
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            backgroundRes = R.drawable.ic_pentagon
+        )
+    )
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -509,63 +630,39 @@ fun StatsSummaryCard(
                 verticalArrangement = Arrangement.spacedBy(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                StatItem(
-                    icon = Icons.Rounded.LocalFireDepartment,
-                    value = streak,
-                    label = stringResource(R.string.stats_streak_label),
-                    iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    backgroundRes = R.drawable.ic_ghost
-                )
-                StatItem(
-                    icon = Icons.Rounded.CheckCircle,
-                    value = adherence,
-                    label = stringResource(R.string.stats_on_time_label),
-                    iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    backgroundRes = R.drawable.ic_twelve_sided_cookie
-                )
-                StatItem(
-                    icon = Icons.Rounded.Warning,
-                    value = missedPerWeek,
-                    label = stringResource(R.string.stats_missed_label),
-                    iconColor = MaterialTheme.colorScheme.onErrorContainer,
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    backgroundRes = R.drawable.ic_pentagon
-                )
+                tiles.forEach { tile ->
+                    StatItem(
+                        icon = tile.icon,
+                        value = tile.value,
+                        label = tile.label,
+                        iconColor = tile.iconColor,
+                        containerColor = tile.containerColor,
+                        backgroundRes = tile.backgroundRes,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         } else {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                StatItem(
-                    icon = Icons.Rounded.LocalFireDepartment,
-                    value = streak,
-                    label = stringResource(R.string.stats_streak_label),
-                    iconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    backgroundRes = R.drawable.ic_ghost
-                )
-                StatItem(
-                    icon = Icons.Rounded.CheckCircle,
-                    value = adherence,
-                    label = stringResource(R.string.stats_on_time_label),
-                    iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    backgroundRes = R.drawable.ic_twelve_sided_cookie
-                )
-                StatItem(
-                    icon = Icons.Rounded.Warning,
-                    value = missedPerWeek,
-                    label = stringResource(R.string.stats_missed_label),
-                    iconColor = MaterialTheme.colorScheme.onErrorContainer,
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    backgroundRes = R.drawable.ic_pentagon
-                )
+                // Equal widths keep the four tiles tidy on narrow phones, where
+                // longer localised labels wrap instead of squeezing the row.
+                tiles.forEach { tile ->
+                    StatItem(
+                        icon = tile.icon,
+                        value = tile.value,
+                        label = tile.label,
+                        iconColor = tile.iconColor,
+                        containerColor = tile.containerColor,
+                        backgroundRes = tile.backgroundRes,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
@@ -624,9 +721,11 @@ fun StatItem(
     label: String,
     iconColor: Color,
     containerColor: Color,
-    backgroundRes: Int
+    backgroundRes: Int,
+    modifier: Modifier = Modifier
 ) {
     Column(
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -652,12 +751,14 @@ fun StatItem(
             style = MaterialTheme.typography.titleLarge,
             fontFamily = GoogleSansFlex,
             fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
             fontFamily = GoogleSansFlex,
+            textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
@@ -791,6 +892,9 @@ fun CalendarDayCell(
             DayStatus.PARTIAL -> MaterialTheme.colorScheme.secondary
             DayStatus.NONE_TAKEN -> MaterialTheme.colorScheme.error
             DayStatus.SKIPPED -> MaterialTheme.colorScheme.tertiary
+            // Postponed doses resolve the day, but as a softer state than both
+            // a skip and a miss, so they get their own tinted colour.
+            DayStatus.DELAYED -> MaterialTheme.colorScheme.tertiaryContainer
             DayStatus.NO_MEDS -> Color.Transparent
             DayStatus.FUTURE -> Color.Transparent
         },
@@ -803,6 +907,7 @@ fun CalendarDayCell(
         DayStatus.PARTIAL -> MaterialTheme.colorScheme.onSecondary
         DayStatus.NONE_TAKEN -> MaterialTheme.colorScheme.onError
         DayStatus.SKIPPED -> MaterialTheme.colorScheme.onTertiary
+        DayStatus.DELAYED -> MaterialTheme.colorScheme.onTertiaryContainer
         DayStatus.FUTURE -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
         else -> MaterialTheme.colorScheme.onSurface
     }
@@ -866,14 +971,17 @@ fun CalendarDayCell(
 
 @Composable
 fun CalendarLegend() {
-    Row(
+    // FlowRow rather than Row: five entries no longer fit on one line on a
+    // narrow phone in the longer locales, so they wrap instead of clipping.
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         LegendItem(color = MaterialTheme.colorScheme.primary, label = stringResource(R.string.legend_all_taken))
         LegendItem(color = MaterialTheme.colorScheme.secondary, label = stringResource(R.string.legend_partial))
         LegendItem(color = MaterialTheme.colorScheme.tertiary, label = stringResource(R.string.legend_skipped))
+        LegendItem(color = MaterialTheme.colorScheme.tertiaryContainer, label = stringResource(R.string.legend_delayed))
         LegendItem(color = MaterialTheme.colorScheme.error, label = stringResource(R.string.legend_missed))
     }
 }

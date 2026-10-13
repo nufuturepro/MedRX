@@ -18,6 +18,9 @@ import com.nukirk.medrx.MainActivity
 import com.nukirk.medrx.PREF_FULL_SCREEN_ALARM
 import com.nukirk.medrx.PREF_SHOW_NOTIFICATIONS
 import com.nukirk.medrx.PREF_SNOOZE_DURATION
+import com.nukirk.medrx.PREF_SNOOZE_LIMIT
+import com.nukirk.medrx.PREF_SNOOZE_LIMIT_ACTION
+import com.nukirk.medrx.PREF_SNOOZE_LIMIT_ENABLED
 import com.nukirk.medrx.R
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -38,11 +41,27 @@ class NotificationReceiver : BroadcastReceiver() {
     companion object {
         const val ALARM_CHANNEL_ID = "med_alarms_fullscreen_v1"
         const val SIMPLE_NOTIF_CHANNEL_ID = "med_alarms_simple_v1"
+
+        /** Low-importance channel for quiet, informational notices. */
+        const val NOTICE_CHANNEL_ID = "med_notices_v1"
         const val ACTION_SHOW_NOTIFICATION = "ACTION_SHOW_NOTIFICATION"
         const val ACTION_TAKEN = "ACTION_TAKEN"
         const val ACTION_SNOOZE = "ACTION_SNOOZE"
         const val ACTION_SKIP = "ACTION_SKIP"
         const val ACTION_RESCHEDULE_ALL = "ACTION_RESCHEDULE_ALL"
+
+        /** Undoes a skip that the snooze limit wrote automatically. */
+        const val ACTION_UNDO_SNOOZE_SKIP = "ACTION_UNDO_SNOOZE_SKIP"
+
+        /**
+         * Request-code offset for the pending snooze alarm. Kept clear of the
+         * fresh-fire (item id), content (200000), skip (300000) and skip-limit
+         * notice (400000) codes.
+         */
+        const val SNOOZE_REQUEST_OFFSET = 100_000
+
+        /** Notification id offset for the "closed out as skipped" notice. */
+        const val SNOOZE_LIMIT_NOTICE_OFFSET = 400_000
 
         /**
          * Builds the PendingIntent used by alarm UI / notification actions to
@@ -68,6 +87,77 @@ class NotificationReceiver : BroadcastReceiver() {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
+        }
+
+        /**
+         * Dismisses the posted reminder for [itemIds] and drops any snooze alarm
+         * still pending for them. Called whenever a dose is logged or skipped
+         * outside the notification itself (the app card, or the watch), so a
+         * stale reminder cannot be tapped again later and produce a second
+         * entry.
+         */
+        fun cancelReminder(context: Context, itemIds: LongArray) {
+            if (itemIds.isEmpty()) return
+            try {
+                val notifManager =
+                    context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                // Grouped reminders share the lowest id; single ones use their own.
+                notifManager.cancel(itemIds.min().toInt())
+                itemIds.forEach { notifManager.cancel(it.toInt()) }
+
+                val alarmManager =
+                    context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                itemIds.forEach { cancelPendingSnoozeAlarm(context, alarmManager, it) }
+
+                context.sendBroadcast(
+                    Intent("ACTION_CLOSE_ALARM_ACTIVITY").setPackage(context.packageName)
+                )
+            } catch (_: Exception) {
+            }
+        }
+
+        /** Cancels the snooze alarm for [itemId], if one is actually armed. */
+        private fun cancelPendingSnoozeAlarm(
+            context: Context,
+            alarmManager: AlarmManager,
+            itemId: Long
+        ) {
+            val intent = Intent(context, NotificationReceiver::class.java).apply {
+                action = ACTION_SHOW_NOTIFICATION
+                putExtra("ITEM_ID", itemId)
+            }
+            // PendingIntent identity ignores extras, so the action + request code
+            // are enough to find an alarm armed by a group snooze. FLAG_NO_CREATE
+            // keeps this a no-op when nothing was armed.
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                itemId.toInt() + SNOOZE_REQUEST_OFFSET,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            ) ?: return
+            alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
+        }
+
+        /** Arms [pendingIntent] at [triggerAt], degrading when exact alarms are denied. */
+        private fun setAlarm(
+            alarmManager: AlarmManager,
+            triggerAt: Long,
+            pendingIntent: PendingIntent
+        ) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+                } else {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        triggerAt,
+                        pendingIntent
+                    )
+                }
+            } catch (_: SecurityException) {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
+            }
         }
 
         fun scheduleNotification(context: Context, item: MedData) {
@@ -201,7 +291,14 @@ class NotificationReceiver : BroadcastReceiver() {
                             !item.takenHistory.containsKey(LocalDate.now()) &&
                             !item.skipHistory.containsKey(LocalDate.now())
                 }
-                val groupItems = if (isSnooze) {
+                // A snoozed group comes back whole: the snooze alarm carries
+                // every id that was still due when it was tapped, so rebuilding
+                // from that set restores the original reminder instead of
+                // re-posting one medication at a time.
+                val requestedIds = intent.getLongArrayExtra("ITEM_IDS")?.toSet()
+                val groupItems = if (isSnooze && requestedIds != null) {
+                    items.filter { it.id in requestedIds }.filter(isDueNow)
+                } else if (isSnooze) {
                     listOf(triggerItem).filter(isDueNow)
                 } else {
                     items.filter(isDueNow)
@@ -396,6 +493,9 @@ class NotificationReceiver : BroadcastReceiver() {
                         )
                     }
 
+                    // The dose is resolved, so its snooze tally is spent.
+                    SnoozeTracker.clear(context, itemIds, LocalDate.now())
+
                     val notifId = intent.getIntExtra("NOTIF_ID", -1)
                     if (notifId != -1) {
                         val notifManager =
@@ -458,6 +558,9 @@ class NotificationReceiver : BroadcastReceiver() {
                         )
                     }
 
+                    // The dose is resolved, so its snooze tally is spent.
+                    SnoozeTracker.clear(context, itemIds, LocalDate.now())
+
                     val notifId = intent.getIntExtra("NOTIF_ID", -1)
                     if (notifId != -1) {
                         val notifManager =
@@ -472,6 +575,49 @@ class NotificationReceiver : BroadcastReceiver() {
                     context.sendBroadcast(
                         Intent("ACTION_CLOSE_ALARM_ACTIVITY").setPackage(context.packageName)
                     )
+                }
+            }
+
+            ACTION_UNDO_SNOOZE_SKIP -> {
+                val itemIds = intent.getLongArrayExtra("ITEM_IDS") ?: run {
+                    val singleId = intent.getLongExtra("ITEM_ID", -1L)
+                    if (singleId != -1L) longArrayOf(singleId) else null
+                }
+
+                if (itemIds != null) {
+                    val today = LocalDate.now()
+                    val items = DataRepository.loadData(context).toMutableList()
+                    var isDataUpdated = false
+
+                    for (id in itemIds) {
+                        val index = items.indexOfFirst { it.id == id }
+                        if (index == -1) continue
+                        val item = items[index]
+                        // Only the automatic conversion is undoable; a skip the
+                        // user picked deliberately is left untouched.
+                        if (item.skipHistory[today]?.reason != SkipReason.SNOOZED_AWAY) continue
+                        items[index] = item.copy(
+                            skipHistory = HashMap(item.skipHistory).apply { remove(today) }
+                        )
+                        scheduleNotification(context, items[index])
+                        isDataUpdated = true
+                    }
+
+                    if (isDataUpdated) {
+                        DataRepository.saveData(context, items)
+                        context.sendBroadcast(
+                            Intent("com.nukirk.medrx.REFRESH_DATA").setPackage(
+                                context.packageName
+                            )
+                        )
+                    }
+
+                    val notifId = intent.getIntExtra("NOTIF_ID", -1)
+                    if (notifId != -1) {
+                        val notifManager =
+                            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                        notifManager.cancel(notifId)
+                    }
                 }
             }
 
@@ -482,48 +628,105 @@ class NotificationReceiver : BroadcastReceiver() {
                 }
 
                 if (itemIds != null) {
-                    val snoozeDuration = prefs.getInt(PREF_SNOOZE_DURATION, 10)
-                    val alarmManager =
-                        context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-                    val snoozeTime = System.currentTimeMillis() + (snoozeDuration * 60 * 1000)
+                    val snoozeDuration = prefs.getInt(
+                        PREF_SNOOZE_DURATION,
+                        SnoozePolicy.DEFAULT_SNOOZE_DURATION_MINUTES
+                    )
+                    val limitEnabled = prefs.getBoolean(PREF_SNOOZE_LIMIT_ENABLED, false)
+                    val snoozeLimit = prefs.getInt(PREF_SNOOZE_LIMIT, SnoozePolicy.DEFAULT_SNOOZE_LIMIT)
+                    val limitAction = SnoozeLimitAction.fromPref(
+                        prefs.getString(PREF_SNOOZE_LIMIT_ACTION, null)
+                    )
+                    val today = LocalDate.now()
+                    val stored = DataRepository.loadData(context)
 
+                    // Count the tap first, then let the policy decide per dose
+                    // whether it is asked again or closed out as a skip.
+                    val reArm = mutableListOf<Long>()
+                    val escalate = mutableListOf<Pair<Long, SkipReason>>()
                     for (id in itemIds) {
-                        val snoozeIntent = Intent(context, NotificationReceiver::class.java).apply {
-                            this.action = ACTION_SHOW_NOTIFICATION
-                            putExtra("ITEM_ID", id)
-                            putExtra("IS_SNOOZE", true)
+                        val item = stored.find { it.id == id }
+                        // Nothing left to nag about when the dose is already
+                        // logged or skipped (e.g. it was taken from the app
+                        // while the reminder was up).
+                        if (item == null ||
+                            item.takenHistory.containsKey(today) ||
+                            item.skipHistory.containsKey(today)
+                        ) {
+                            continue
                         }
-                        val pendingIntent = PendingIntent.getBroadcast(
-                            context,
-                            id.toInt() + 100000,
-                            snoozeIntent,
-                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                        )
 
-                        try {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-                                alarmManager.set(AlarmManager.RTC_WAKEUP, snoozeTime, pendingIntent)
-                            } else {
-                                alarmManager.setExactAndAllowWhileIdle(
-                                    AlarmManager.RTC_WAKEUP,
-                                    snoozeTime,
-                                    pendingIntent
-                                )
-                            }
-                        } catch (e: SecurityException) {
-                            alarmManager.set(AlarmManager.RTC_WAKEUP, snoozeTime, pendingIntent)
+                        val count = SnoozeTracker.increment(context, id, today)
+                        val decision = SnoozePolicy.decide(
+                            count,
+                            limitEnabled,
+                            snoozeLimit,
+                            limitAction
+                        )
+                        if (decision == SnoozeDecision.RE_ARM) {
+                            reArm += id
+                        } else {
+                            escalate += id to SnoozePolicy.outcomeReason(decision)
                         }
                     }
 
+                    val alarmManager =
+                        context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+                    if (reArm.isNotEmpty()) {
+                        // One alarm carries the whole surviving group, so a
+                        // snoozed reminder returns as a single notification /
+                        // alarm listing every dose that is still due.
+                        val leaderId = reArm.min()
+                        val snoozeIntent =
+                            Intent(context, NotificationReceiver::class.java).apply {
+                                this.action = ACTION_SHOW_NOTIFICATION
+                                putExtra("ITEM_ID", leaderId)
+                                putExtra("ITEM_IDS", reArm.toLongArray())
+                                putExtra("IS_SNOOZE", true)
+                            }
+                        val pendingIntent = PendingIntent.getBroadcast(
+                            context,
+                            leaderId.toInt() + SNOOZE_REQUEST_OFFSET,
+                            snoozeIntent,
+                            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                        )
+                        setAlarm(
+                            alarmManager,
+                            System.currentTimeMillis() + (snoozeDuration * 60 * 1000L),
+                            pendingIntent
+                        )
+
+                        // A shrunk group must not leave an orphan alarm under an
+                        // earlier leader's request code.
+                        itemIds.filter { id -> reArm.none { it == id } }.forEach {
+                            cancelPendingSnoozeAlarm(context, alarmManager, it)
+                        }
+                    } else {
+                        itemIds.forEach {
+                            cancelPendingSnoozeAlarm(context, alarmManager, it)
+                        }
+                    }
+
+                    // Doses in one tap share the configured action, but counts
+                    // can differ, so outcomes are grouped by what they record.
+                    escalate.groupBy { it.second }.forEach { (reason, entries) ->
+                        recordSnoozeLimitOutcome(
+                            context,
+                            entries.map { it.first },
+                            today,
+                            reason,
+                            snoozeLimit
+                        )
+                    }
+
+                    val notifManager =
+                        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     val notifId = intent.getIntExtra("NOTIF_ID", -1)
                     if (notifId != -1) {
-                        val notifManager =
-                            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         notifManager.cancel(notifId)
-                    } else if (itemIds.size == 1) {
-                        val notifManager =
-                            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                        notifManager.cancel(itemIds[0].toInt())
+                    } else {
+                        itemIds.forEach { notifManager.cancel(it.toInt()) }
                     }
 
                     context.sendBroadcast(
@@ -531,6 +734,148 @@ class NotificationReceiver : BroadcastReceiver() {
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * Closes out doses that exhausted their snooze budget. [reason] is either
+     * [SkipReason.SNOOZED_AWAY] (the dose is not being taken) or
+     * [SkipReason.DELAYED] (it moves to the next scheduled slot); both keep the
+     * dose out of "missed" and label it in the doctor report, since repeatedly
+     * snoozing past the limit is a choice rather than an unnoticed omission.
+     */
+    private fun recordSnoozeLimitOutcome(
+        context: Context,
+        itemIds: List<Long>,
+        date: LocalDate,
+        reason: SkipReason,
+        limit: Int
+    ) {
+        val items = DataRepository.loadData(context).toMutableList()
+        val skippedIds = mutableListOf<Long>()
+        val skippedTitles = mutableListOf<String>()
+
+        for (id in itemIds) {
+            val index = items.indexOfFirst { it.id == id }
+            if (index == -1) continue
+            val item = items[index]
+            if (item.type != ItemType.Medicine) continue
+            // Never overwrite a dose that was taken or skipped meanwhile.
+            if (item.takenHistory.containsKey(date) || item.skipHistory.containsKey(date)) continue
+
+            items[index] = item.copy(
+                skipHistory = HashMap(item.skipHistory).apply {
+                    put(date, SkipRecord(reason = reason, time = LocalTime.now()))
+                }
+            )
+            scheduleNotification(context, items[index])
+            skippedIds += id
+            skippedTitles += item.title
+        }
+
+        if (skippedTitles.isEmpty()) return
+
+        DataRepository.saveData(context, items)
+        // The tally has served its purpose, so undoing the skip restores a full
+        // budget of snoozes.
+        SnoozeTracker.clear(context, skippedIds.toLongArray(), date)
+        context.sendBroadcast(
+            Intent("com.nukirk.medrx.REFRESH_DATA").setPackage(context.packageName)
+        )
+        notifySnoozeLimit(context, skippedTitles, skippedIds, limit, reason)
+    }
+
+    /**
+     * Quiet notice that a dose was closed out as skipped, with a way back, so an
+     * automatic write is never invisible or irreversible.
+     */
+    private fun notifySnoozeLimit(
+        context: Context,
+        titles: List<String>,
+        itemIds: List<Long>,
+        limit: Int,
+        reason: SkipReason
+    ) {
+        try {
+            createNotificationChannels(context)
+            val notifId = itemIds.min().toInt() + SNOOZE_LIMIT_NOTICE_OFFSET
+            val idArray = itemIds.toLongArray()
+
+            val undoIntent = Intent(context, NotificationReceiver::class.java).apply {
+                action = ACTION_UNDO_SNOOZE_SKIP
+                putExtra("ITEM_IDS", idArray)
+                putExtra("NOTIF_ID", notifId)
+            }
+            val undoPending = PendingIntent.getBroadcast(
+                context,
+                notifId + 1,
+                undoIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val takeIntent = Intent(context, NotificationReceiver::class.java).apply {
+                action = ACTION_TAKEN
+                putExtra("ITEM_IDS", idArray)
+                putExtra("NOTIF_ID", notifId)
+            }
+            val takePending = PendingIntent.getBroadcast(
+                context,
+                notifId + 2,
+                takeIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val contentIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val contentPendingIntent = PendingIntent.getActivity(
+                context,
+                notifId + 3,
+                contentIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val isDelay = reason == SkipReason.DELAYED
+            val summary = titles.joinToString(", ")
+            val body = context.getString(
+                if (isDelay) R.string.snooze_limit_delayed_desc else R.string.snooze_limit_skipped_desc,
+                summary,
+                limit
+            )
+            val notification = NotificationCompat.Builder(context, NOTICE_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(
+                    context.getString(
+                        if (isDelay) {
+                            R.string.snooze_limit_delayed_title
+                        } else {
+                            R.string.snooze_limit_skipped_title
+                        }
+                    )
+                )
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setCategory(NotificationCompat.CATEGORY_STATUS)
+                .setSilent(true)
+                .setAutoCancel(true)
+                .setContentIntent(contentPendingIntent)
+                .addAction(
+                    R.drawable.ic_notification,
+                    context.getString(R.string.action_undo),
+                    undoPending
+                )
+                .addAction(
+                    R.drawable.ic_notification,
+                    context.getString(R.string.notif_action_taken),
+                    takePending
+                )
+                .build()
+
+            val notifManager =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notifManager.notify(notifId, notification)
+        } catch (_: Exception) {
         }
     }
 
@@ -566,8 +911,18 @@ class NotificationReceiver : BroadcastReceiver() {
                 description = descriptionText
             }
 
+            val noticeChannel = NotificationChannel(
+                NOTICE_CHANNEL_ID,
+                name,
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = descriptionText
+                setSound(null, null)
+            }
+
             notificationManager.createNotificationChannel(alarmChannel)
             notificationManager.createNotificationChannel(simpleNotifChannel)
+            notificationManager.createNotificationChannel(noticeChannel)
         }
     }
 }
