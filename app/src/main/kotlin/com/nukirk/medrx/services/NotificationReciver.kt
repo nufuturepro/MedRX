@@ -26,7 +26,6 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
 
 /**
  * Applies the stock change for a dose being logged or un-logged and updates the
@@ -92,18 +91,28 @@ class NotificationReceiver : BroadcastReceiver() {
         /**
          * Dismisses the posted reminder for [itemIds] and drops any snooze alarm
          * still pending for them. Called whenever a dose is logged or skipped
-         * outside the notification itself (the app card, or the watch), so a
-         * stale reminder cannot be tapped again later and produce a second
-         * entry.
+         * outside the notification itself (the app card, a pre-skip, a delete,
+         * or the watch), so a stale reminder cannot be tapped again later and
+         * produce a second entry.
+         *
+         * Doses that fall due together share one reminder, posted under the
+         * lowest member id, so every id the slot can own is cancelled —
+         * cancelling only the resolved dose's own id leaves the group's
+         * notification behind, and being ongoing it cannot be swiped away.
          */
         fun cancelReminder(context: Context, itemIds: LongArray) {
             if (itemIds.isEmpty()) return
             try {
                 val notifManager =
                     context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                // Grouped reminders share the lowest id; single ones use their own.
-                notifManager.cancel(itemIds.min().toInt())
-                itemIds.forEach { notifManager.cancel(it.toInt()) }
+                val stored = try {
+                    DataRepository.loadData(context)
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                ReminderSlots.reminderIds(itemIds.toList(), stored).forEach {
+                    notifManager.cancel(it)
+                }
 
                 val alarmManager =
                     context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -112,6 +121,23 @@ class NotificationReceiver : BroadcastReceiver() {
                 context.sendBroadcast(
                     Intent("ACTION_CLOSE_ALARM_ACTIVITY").setPackage(context.packageName)
                 )
+            } catch (_: Exception) {
+            }
+        }
+
+        /**
+         * Takes down reminders that no longer stand for a dose the user still
+         * has to act on. Runs after every data mutation, so a schedule edit, a
+         * new version or an archive cannot strand a reminder that outlived the
+         * dose it announced.
+         */
+        fun sweepStaleReminders(context: Context, items: List<MedData>) {
+            try {
+                val stale = ReminderSlots.staleReminderIds(items, LocalDate.now())
+                if (stale.isEmpty()) return
+                val notifManager =
+                    context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                stale.forEach { notifManager.cancel(it) }
             } catch (_: Exception) {
             }
         }
@@ -238,17 +264,8 @@ class NotificationReceiver : BroadcastReceiver() {
             return null
         }
 
-        private fun isValidDate(item: MedData, date: LocalDate): Boolean {
-            if (item.isPrn) return false
-            if (date.isBefore(item.creationDate)) return false
-            if (item.endDate != null && date.isAfter(item.endDate)) return false
-            if (!item.recurrenceDays.isNullOrEmpty() && !item.recurrenceDays.contains(date.dayOfWeek)) return false
-            if (item.intervalGap != null) {
-                val daysBetween = ChronoUnit.DAYS.between(item.creationDate, date)
-                if (daysBetween % item.intervalGap != 0L) return false
-            }
-            return true
-        }
+        private fun isValidDate(item: MedData, date: LocalDate): Boolean =
+            ReminderSlots.isScheduledFor(item, date)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -284,12 +301,10 @@ class NotificationReceiver : BroadcastReceiver() {
                 // reminders alike: a dose that was taken (or skipped) between
                 // the snooze and its re-fire must not pop up again.
                 val isDueNow: (MedData) -> Boolean = { item ->
-                    item.type == ItemType.Medicine &&
-                            item.creationTime == triggerItem.creationTime &&
-                            isValidDate(item, LocalDate.now()) &&
-                            // Skip meds already logged or skipped today.
-                            !item.takenHistory.containsKey(LocalDate.now()) &&
-                            !item.skipHistory.containsKey(LocalDate.now())
+                    // Same slot, and still unresolved: a dose taken (or skipped)
+                    // between the snooze and its re-fire must not pop up again.
+                    item.creationTime == triggerItem.creationTime &&
+                            ReminderSlots.isDueOn(item, LocalDate.now())
                 }
                 // A snoozed group comes back whole: the snooze alarm carries
                 // every id that was still due when it was tapped, so rebuilding
@@ -501,11 +516,10 @@ class NotificationReceiver : BroadcastReceiver() {
                         val notifManager =
                             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         notifManager.cancel(notifId)
-                    } else if (itemIds.size == 1) {
-                        val notifManager =
-                            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                        notifManager.cancel(itemIds[0].toInt())
                     }
+                    // Also retire by slot: an action carrying a stale or partial
+                    // id set must not leave the group's reminder behind.
+                    cancelReminder(context, itemIds)
 
                     context.sendBroadcast(
                         Intent("ACTION_CLOSE_ALARM_ACTIVITY").setPackage(context.packageName)
@@ -566,11 +580,10 @@ class NotificationReceiver : BroadcastReceiver() {
                         val notifManager =
                             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                         notifManager.cancel(notifId)
-                    } else if (itemIds.size == 1) {
-                        val notifManager =
-                            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                        notifManager.cancel(itemIds[0].toInt())
                     }
+                    // Also retire by slot: an action carrying a stale or partial
+                    // id set must not leave the group's reminder behind.
+                    cancelReminder(context, itemIds)
 
                     context.sendBroadcast(
                         Intent("ACTION_CLOSE_ALARM_ACTIVITY").setPackage(context.packageName)

@@ -513,8 +513,10 @@ object DataRepository {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        // Every data mutation funnels through here — keep the supply widget current.
+        // Every data mutation funnels through here — keep the supply widget
+        // current and drop reminders that no longer stand for a due dose.
         MedSupplyWidgetProvider.updateAll(context)
+        NotificationReceiver.sweepStaleReminders(context, items)
     }
 
     private fun migrateLegacyData(context: Context): List<MedData> {
@@ -1119,6 +1121,13 @@ class MedViewModel(application: Application) : AndroidViewModel(application) {
             _items[index] = updatedItem
         }
 
+        // Deleting up to today removes today's dose, so its reminder has no
+        // dose left to announce. A deletion dated in the future leaves today
+        // (and its reminder) untouched.
+        if (!deleteDate.isAfter(LocalDate.now())) {
+            clearSnoozeState(longArrayOf(item.id), LocalDate.now())
+        }
+
         val itemsOnDate = _items.filter {
             when (it.type) {
                 ItemType.Event -> it.creationDate == deleteDate
@@ -1317,6 +1326,9 @@ class MedViewModel(application: Application) : AndroidViewModel(application) {
             NotificationReceiver.scheduleNotification(getApplication(), archived)
             InventoryService.cancelLowSupplyNotification(getApplication(), archived)
         }
+        // The era ends no later than yesterday, so a reminder still up for
+        // today's dose has nothing left to announce.
+        clearSnoozeState(relatedIds.toLongArray(), LocalDate.now())
         saveData()
         syncToWear()
     }
@@ -1565,6 +1577,13 @@ class MedViewModel(application: Application) : AndroidViewModel(application) {
             skipHistory = HashMap(current.skipHistory).apply { put(date, SkipRecord(reason, LocalTime.now(), note?.trim()?.ifEmpty { null }) ) }
         )
         saveData()
+
+        // A dose pre-skipped for today is the one being reminded right now, so
+        // its reminder comes down with it. A skip dated in the future must
+        // leave today's reminder alone.
+        if (date == LocalDate.now()) {
+            clearSnoozeState(longArrayOf(item.id), date)
+        }
     }
 
     fun confirmIllness(item: MedData, date: LocalDate) {
