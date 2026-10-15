@@ -469,7 +469,7 @@
     <string name="card_refill_desc">Add a refill to supply</string>
     <string name="tap_again_to_refill">Add %1$d %2$s to supply? Tap again to confirm</string>
     <string name="whatsnew_title">What\'s new in Med Rx</string>
-    <string name="whatsnew_body">New in this build:\n\n• Log symptoms with severity (mild / moderate / severe) and an editable date and time\n• Skip and refill now sit beside the taken circle on med cards\n• Symptom logging translated into German, French, Spanish, Portuguese, and Russian\n\nYour data, reminders, and history carry over unchanged.</string>
+    <string name="whatsnew_body">New in this build:\n\n• A reminder that groups several doses at one time is now cleared when you take or skip any one of them — before, only the first dose could clear it, which left a reminder that would not go away\n• Pre-skipping today\'s dose, deleting a dose and archiving a med now take their reminder down too, and stale reminders are swept when a schedule changes\n• Version numbers dropped the \"-fork\" suffix — 2.2.4 is Med Rx\'s own line, tagged v2.2.4\n\nYour data, reminders, and history carry over unchanged.</string>
     <string name="whatsnew_community_hint">Questions or ideas? The Community button opens GitHub Discussions.</string>
     <string name="whatsnew_releases">Releases</string>
     <string name="whatsnew_community">Community</string>

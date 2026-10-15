@@ -55,6 +55,8 @@ Med Rx uses an independent application ID (`com.nukirk.medrx`) and installs safe
 1. **Export:** Open upstream Med → Settings → Export Backup / CSV.
 2. **Import:** Open Med Rx → Advanced Settings → Import Data.
 
+Releases are numbered on Med Rx's own line: 2.2.4 is the first release without the `-fork.1` suffix earlier builds carried. Updating between Med Rx versions needs no export/import — same app (`com.nukirk.medrx`), same signing key, your data stays.
+
 All updates, signed releases, and issue trackers are hosted directly within this repository. Bug reports and feature requests go to [this repo's issues](https://github.com/nufuturepro/MedRX/issues).
 
 ## Acknowledgements

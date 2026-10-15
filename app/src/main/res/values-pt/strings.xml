@@ -413,7 +413,7 @@
     <string name="card_refill_desc">Adicionar uma recarga ao estoque</string>
     <string name="tap_again_to_refill">Adicionar %1$d %2$s ao estoque? Toque novamente para confirmar</string>
     <string name="whatsnew_title">Novidades do Med Rx</string>
-    <string name="whatsnew_body">Novidades desta versão:\n\n• Registre sintomas com intensidade (leve / moderado / grave) e data e hora editáveis\n• Pular e reabastecer ficam ao lado do círculo de tomada nos cartões\n• Registro de sintomas traduzido para alemão, francês, espanhol e russo\n\nSeus dados, lembretes e histórico permanecem intactos.</string>
+    <string name="whatsnew_body">Novidades desta versão:\n\n• Um lembrete que reúne várias doses no mesmo horário agora é apagado quando você toma ou pula qualquer uma delas — antes, só a primeira dose conseguia apagá-lo e o lembrete ficava preso\n• Pular a dose de hoje com antecedência, excluir uma dose e arquivar um medicamento também removem o lembrete, e lembretes obsoletos são limpos quando o esquema muda\n• Os números de versão não usam mais o sufixo \"-fork\": 2.2.4 é a numeração própria do Med Rx, com tags v2.2.4\n\nSeus dados, lembretes e histórico permanecem intactos.</string>
     <string name="whatsnew_community_hint">Dúvidas ou ideias? O botão «Comunidade» abre o GitHub Discussions.</string>
     <string name="whatsnew_releases">Versões</string>
     <string name="whatsnew_community">Comunidade</string>

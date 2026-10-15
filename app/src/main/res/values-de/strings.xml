@@ -455,7 +455,7 @@
     <string name="card_refill_desc">Nachfüllung zum Vorrat hinzufügen</string>
     <string name="tap_again_to_refill">%1$d %2$s zum Vorrat hinzufügen? Zum Bestätigen erneut tippen</string>
     <string name="whatsnew_title">Neu in Med Rx</string>
-    <string name="whatsnew_body">Neu in dieser Version:\n\n• Symptome mit Schwere (leicht / mittel / schwer) sowie frei wählbarem Datum und Uhrzeit erfassen\n• Überspringen und Nachfüllen liegen nun neben dem Einnahmekreis auf den Karten\n• Symptomerfassung auf Deutsch, Französisch, Spanisch, Portugiesisch und Russisch\n\nDeine Daten, Erinnerungen und der Verlauf bleiben unverändert erhalten.</string>
+    <string name="whatsnew_body">Neu in dieser Version:\n\n• Eine Erinnerung, die mehrere Dosen zur selben Zeit bündelt, verschwindet jetzt, sobald du eine davon einnimmst oder überspringst — vorher konnte nur die erste Dosis sie entfernen, und die Erinnerung blieb stehen\n• Das vorab geplante Überspringen der heutigen Dosis, das Löschen einer Dosis und das Archivieren eines Medikaments entfernen die Erinnerung nun ebenfalls; veraltete Erinnerungen werden bei Planänderungen automatisch aufgeräumt\n• Versionsnummern ohne \"-fork\"-Suffix — 2.2.4 ist Med Rxs eigene Zählung, Tags heißen jetzt v2.2.4\n\nDeine Daten, Erinnerungen und der Verlauf bleiben unverändert erhalten.</string>
     <string name="whatsnew_community_hint">Fragen oder Ideen? Die Schaltfläche „Community“ öffnet GitHub Discussions.</string>
     <string name="whatsnew_releases">Releases</string>
     <string name="whatsnew_community">Community</string>

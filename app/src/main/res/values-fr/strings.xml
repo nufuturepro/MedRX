@@ -413,7 +413,7 @@
     <string name="card_refill_desc">Ajouter une recharge au stock</string>
     <string name="tap_again_to_refill">Ajouter %1$d %2$s au stock ? Touchez à nouveau pour confirmer</string>
     <string name="whatsnew_title">Nouveautés de Med Rx</string>
-    <string name="whatsnew_body">Nouveautés de cette version :\n\n• Consignez vos symptômes avec leur sévérité (léger / modéré / sévère) et une date et une heure modifiables\n• Les boutons Sauter et Recharger se placent à côté du cercle de prise sur les cartes\n• Consignation des symptômes traduite en allemand, espagnol, portugais et russe\n\nVos données, rappels et historique sont conservés à l’identique.</string>
+    <string name="whatsnew_body">Nouveautés de cette version :\n\n• Un rappel qui regroupe plusieurs doses à la même heure disparaît désormais dès que vous prenez ou sautez l\'une d\'elles — avant, seule la première dose pouvait l\'\u00E9ffacer et le rappel restait affiché\n• Sauter à l\'avance la dose du jour, supprimer une dose et archiver un médicament retirent aussi leur rappel, et les rappels obsolètes sont nettoyés dès que le planning change\n• Les numéros de version n\'ont plus le suffixe « -fork » : 2.2.4 est la numérotation propre de Med Rx, avec des étiquettes v2.2.4\n\nVos données, rappels et historique sont conservés à l’identique.</string>
     <string name="whatsnew_community_hint">Des questions ou des idées ? Le bouton « Communauté » ouvre GitHub Discussions.</string>
     <string name="whatsnew_releases">Versions</string>
     <string name="whatsnew_community">Communauté</string>

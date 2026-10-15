@@ -413,7 +413,7 @@
     <string name="card_refill_desc">Añadir una recarga a las existencias</string>
     <string name="tap_again_to_refill">¿Añadir %1$d %2$s a las existencias? Toca de nuevo para confirmar</string>
     <string name="whatsnew_title">Novedades de Med Rx</string>
-    <string name="whatsnew_body">Novedades de esta versión:\n\n• Registra síntomas con severidad (leve / moderado / severo) y fecha y hora editables\n• Omitir y reabastecer se ubican junto al círculo de toma en las tarjetas\n• Registro de síntomas traducido al alemán, francés, portugués y ruso\n\nTus datos, recordatorios e historial se conservan sin cambios.</string>
+    <string name="whatsnew_body">Novedades de esta versión:\n\n• Un recordatorio que agrupa varias dosis a la misma hora ahora se borra al tomar u omitir cualquiera de ellas — antes solo la primera dosis podía borrarlo y el recordatorio se quedaba fijo\n• Omitir por adelantado la dosis de hoy, eliminar una dosis y archivar un medicamento también retiran su recordatorio, y los recordatorios obsoletos se limpian al cambiar la pauta\n• Los números de versión ya no llevan el sufijo \"-fork\": 2.2.4 es la numeración propia de Med Rx, con etiquetas v2.2.4\n\nTus datos, recordatorios e historial se conservan sin cambios.</string>
     <string name="whatsnew_community_hint">¿Preguntas o ideas? El botón «Comunidad» abre GitHub Discussions.</string>
     <string name="whatsnew_releases">Versiones</string>
     <string name="whatsnew_community">Comunidad</string>

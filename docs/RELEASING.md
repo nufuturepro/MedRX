@@ -31,29 +31,32 @@ No GitHub CLI? Repo → Settings → Secrets and variables → Actions →
 > When uploading base64 by hand, make sure the editor doesn't wrap lines —
 > the CI decodes the secret exactly as stored.
 
-## Versioning a fork
+## Version numbers
 
 Med RX carries **two numbers with two jobs**:
 
 - **`versionCode`** — what Android and CI care about. A strictly increasing
   integer that is **Med RX's own counter**: start wherever it must to be
-  above any build already shipped under this app id (currently `21`, one
-  above upstream's last `20`), increment by exactly 1 per release, never
+  above any build already shipped under this app id (now `26`, past
+  upstream's last `20`), increment by exactly 1 per release, never
   reuse, never sync it back to upstream's counter.
 - **`versionName`** — what humans and the in-app updater compare. Format:
-  **`X.Y.Z-fork.N`**
+  **`X.Y.Z`**, Med Rx's own line since `2.2.4`.
 
-  - `X.Y.Z` = the upstream Med version whose code this fork is based on
-    (the fork point, bumped when you absorb real upstream changes).
-  - `fork.N` = Med RX's own release counter. Fork-only releases bump
-    `N`; absorbing upstream changes steps the base (`2.1`, `2.2`, …).
+  - `Z` for fixes and small batches, `Y` for feature releases, `X` when the
+    app changes shape. The `-fork.N` suffix used before `2.2.4` is gone: it
+    framed the app as *based on* upstream rather than as its own product, and
+    it broke comparisons silently — `isNewer()` splits on `.` and turns any
+    non-numeric segment into `0`, so `2.2.3-fork.1` compares as
+    `[2, 2, 0, 1]` and the patch digit disappears.
 
-  Example lineage: `2.1.0-fork.1` → `2.1.0-fork.2` → `2.2.0-fork.1`.
+  Example lineage: `2.2.3-fork.1` → `2.2.4` → `2.3.0`.
 
-This reads as "based on Med 2.x, fork release N," collides with nothing
-upstream uses, and the updater's segment-wise `isNewer()` comparison
-handles it correctly (`2.1.0-fork.1` > `2.0`; a release must always be
-strictly greater than the previous one).
+**The tag must keep the same shape as `versionName`** (`v2.2.4` for
+`2.2.4`). The updater compares the release tag against the installed
+`versionName`, so a mismatch (`v2.2.4-fork.1` against `2.2.4`) makes every
+installed build look newer than the release and the app stops offering
+updates entirely.
 
 ## Cutting a release
 
@@ -63,13 +66,14 @@ strictly greater than the previous one).
 3. Tag and push the tag:
 
    ```bash
-   git tag v2.1.0-fork.1 && git push origin v2.1.0-fork.1
+   git tag v2.2.4 && git push origin v2.2.4
    ```
 
 4. Watch the Actions tab; when green, the Release appears with
    `MedRx-…-phone.apk` and `MedRx-…-wear.apk`.
-5. Sanity-check: the updater compares `versionName` strings, so a new
-   release must have a strictly greater version than the previous one.
+5. Sanity-check: the updater compares the release tag against the installed
+   `versionName`, so the new version must compare strictly greater and the
+   tag must match `versionName` in shape (`v2.2.4` ↔ `2.2.4`).
 
 ## Signing-key rules
 
@@ -98,7 +102,7 @@ SHA-256: 6A:CE:BC:23:0B:15:C4:E6:16:11:A5:AC:57:37:EE:A5:09:90:88:F6:8C:13:72:FA
 ```
 
 Publish this in the README so users can verify downloaded APKs
-(`keytool -printcert -jarfile MedRx-2.2.0-fork.1-phone.apk`).
+(`keytool -printcert -jarfile MedRx-2.2.4-phone.apk`).
 
 ## Migrating users from the original Med
 
