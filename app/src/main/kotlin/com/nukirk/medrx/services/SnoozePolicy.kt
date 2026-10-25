@@ -60,6 +60,9 @@ object SnoozePolicy {
     /** Lengths offered without typing a number. */
     val DURATION_PRESETS = listOf(5, 10, 15, 30, 60, 120)
 
+    /** Quick lengths on the full-screen alarm; anything else opens the picker. */
+    val QUICK_DURATION_PRESETS = listOf(5, 10, 15, 30)
+
     /** Escalation thresholds offered in settings. */
     val LIMIT_PRESETS = listOf(2, 3, 4, 5)
 

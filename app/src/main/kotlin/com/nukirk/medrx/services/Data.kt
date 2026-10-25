@@ -1180,84 +1180,97 @@ class MedViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * Refill: adds one pack to the medication's single balance and mirrors it to
+     * every dose slot ([SupplyGroup]), so a two-times-a-day medicine is not
+     * refilled twice. The posted low-supply alert is retired and the threshold
+     * re-evaluated, so refilling actually ends the nagging.
+     */
+    fun refillSupply(item: MedData, amount: Int? = null) {
+        if (item.type != ItemType.Medicine) return
+        val updated = SupplyGroup.refill(_items, item.id, amount) ?: return
+        retireSupplyAlerts(updated)
+        saveData()
+    }
+
+    /**
+     * Stores a counted balance exactly as typed — the correction path for a
+     * bottle that was counted wrong. Same mirroring as a refill, logged as a
+     * CORRECTION so the ledger still explains the change.
+     */
+    fun setSupplyExact(item: MedData, count: Int) {
+        if (item.type != ItemType.Medicine) return
+        val updated = SupplyGroup.setExact(_items, item.id, count) ?: return
+        retireSupplyAlerts(updated)
+        saveData()
+    }
+
+    /** Drops stale low-supply alerts and re-evaluates after a stock change. */
+    private fun retireSupplyAlerts(updated: MedData) {
+        SupplyGroup.members(_items, updated).forEach { member ->
+            InventoryService.cancelLowSupplyNotification(getApplication(), member)
+        }
+        InventoryService.evaluateAll(getApplication(), _items)
+    }
+
+    /**
      * Applies supply (inventory) settings from the editor to all entries of the
      * item's group. `null` supply turns tracking off. The editor always sends
      * the user's explicit values, so [InventoryEntry.dosesLeft] is stored as-is:
      * typing a corrected count must win over any derived value.
      */
-    fun refillSupply(item: MedData, amount: Int? = null) {
-        if (item.type != ItemType.Medicine) return
-        val refillSize = amount ?: item.supplyDosesPerRefill ?: return
-        if (refillSize <= 0) return
-
-        val targets = if (item.groupId != null) {
-            _items.filter { it.groupId == item.groupId }
-        } else {
-            listOf(item)
-        }
-
-        targets.forEach { target ->
-            val index = _items.indexOfFirst { it.id == target.id }
-            if (index != -1 && target.supplyDosesLeft != null) {
-                val newLeft = target.supplyDosesLeft + refillSize
-                _items[index] = InventoryService.logSupplyChange(
-                    target.copy(
-                        supplyDosesLeft = newLeft,
-                        supplyAlertShown = false
-                    ),
-                    SupplyChangeKind.REFILL,
-                    delta = +refillSize,
-                    balanceAfter = newLeft
-                )
-            }
-        }
-        saveData()
-    }
-
     fun applySupplySettings(item: MedData, supply: InventoryEntry?) {
-        val targets = if (item.groupId != null) {
-            _items.filter { it.groupId == item.groupId }
-        } else {
-            listOf(item)
-        }
+        val index = _items.indexOfFirst { it.id == item.id }
+        if (index == -1) return
 
-        val refillsEnabled = supply != null && supply.dosesPerRefill > 0
-        var supplySettingsChanged = false
-
-        targets.forEach { target ->
-            val newLeft = supply?.dosesLeft
-            val index = _items.indexOfFirst { it.id == target.id }
-            if (index != -1) {
-                var updated = target.copy(
-                    supplyDosesLeft = newLeft,
-                    supplyDosesPerRefill = supply?.dosesPerRefill?.takeIf { refillsEnabled },
-                    supplyLowThreshold = supply?.lowThreshold,
-                    supplyUnit = supply?.unit ?: SupplyUnit.DOSE,
-                    supplyUnitsPerDose = supply?.unitsPerDose?.coerceAtLeast(1) ?: 1,
-                    supplyEstimated = supply?.unit == SupplyUnit.SPRAY || supply?.unit == SupplyUnit.PUFF,
-                    supplyAlertShown = false
-                )
-                // Ledger: record manual corrections (and refill-sized bumps) per
-                // slot, only where the count actually changed.
-                val supplyBasisChanged = supply != null &&
-                        (target.supplyUnit != supply.unit || target.supplyUnitsPerDose != supply.unitsPerDose.coerceAtLeast(1))
-                if (newLeft != null && (newLeft != target.supplyDosesLeft || supplyBasisChanged)) {
-                    val delta = newLeft - (target.supplyDosesLeft ?: 0)
-                    val kind = when {
-                        target.supplyDosesLeft == null -> SupplyChangeKind.INITIAL
-                        delta > 0 && refillsEnabled && delta % supply.dosesPerRefill == 0 -> SupplyChangeKind.REFILL
-                        else -> SupplyChangeKind.CORRECTION
-                    }
-                    updated = InventoryService.logSupplyChange(
-                        updated, kind, delta = delta, balanceAfter = newLeft
+        if (supply == null) {
+            // Tracking off clears the stock block on every dose slot.
+            SupplyGroup.members(_items, _items[index]).forEach { member ->
+                val memberIndex = _items.indexOfFirst { it.id == member.id }
+                if (memberIndex != -1) {
+                    _items[memberIndex] = _items[memberIndex].copy(
+                        supplyDosesLeft = null,
+                        supplyDosesPerRefill = null,
+                        supplyLowThreshold = null,
+                        supplyUnit = SupplyUnit.DOSE,
+                        supplyUnitsPerDose = 1,
+                        supplyEstimated = false,
+                        supplyAlertShown = false
                     )
                 }
-                _items[index] = if (supply != null) InventoryService.evaluateItem(getApplication(), updated) else updated
-                supplySettingsChanged = supplySettingsChanged || _items[index] != target
             }
+            saveData()
+            refreshLowSupplyAlerts()
+            return
         }
+
+        val current = _items[index]
+        val left = supply.dosesLeft.coerceAtLeast(0)
+        val unitsPerDose = supply.unitsPerDose.coerceAtLeast(1)
+        val basisChanged = current.supplyUnit != supply.unit || current.supplyUnitsPerDose != unitsPerDose
+        var updated = current.copy(
+            supplyDosesLeft = left,
+            supplyDosesPerRefill = supply.dosesPerRefill.takeIf { it > 0 },
+            supplyLowThreshold = supply.lowThreshold,
+            supplyUnit = supply.unit,
+            supplyUnitsPerDose = unitsPerDose,
+            supplyEstimated = supply.unit == SupplyUnit.SPRAY || supply.unit == SupplyUnit.PUFF,
+            supplyAlertShown = false
+        )
+        // One stock entry for the medication, not one per dose slot.
+        if (left != current.supplyDosesLeft || basisChanged) {
+            val delta = left - (current.supplyDosesLeft ?: 0)
+            val kind = when {
+                current.supplyDosesLeft == null -> SupplyChangeKind.INITIAL
+                delta > 0 && supply.dosesPerRefill > 0 && delta % supply.dosesPerRefill == 0 ->
+                    SupplyChangeKind.REFILL
+                else -> SupplyChangeKind.CORRECTION
+            }
+            updated = InventoryService.logSupplyChange(updated, kind, delta, left)
+        }
+        _items[index] = InventoryService.evaluateItem(getApplication(), updated)
+        SupplyGroup.mirror(_items, _items[index])
         saveData()
-        if (supplySettingsChanged) refreshLowSupplyAlerts()
+        refreshLowSupplyAlerts()
     }
 
     /**
@@ -1478,6 +1491,9 @@ class MedViewModel(application: Application) : AndroidViewModel(application) {
             date,
             isTaken = !wasTaken
         )
+        // Stock is one number per medication: a take in this slot lowers the
+        // count every other slot of the same medicine shows.
+        SupplyGroup.mirror(_items, _items[index])
         saveData()
 
         // Logging the dose here must also retire its reminder: without this the

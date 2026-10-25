@@ -37,6 +37,9 @@ object InventoryService {
     /** How many ledger entries to keep per medicine (newest wins). */
     private const val LEDGER_LIMIT = 60
 
+    /** Request code for the low-supply alert's one-tap refill action. */
+    private const val REFILL_ACTION_OFFSET = 600_000
+
     /**
      * Appends a stock change to the item's supply ledger (bounded) so future
      * discrepancies can be traced. Pure: returns the updated item.
@@ -223,6 +226,27 @@ object InventoryService {
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
             .setContentIntent(contentIntent)
+            .apply {
+                // One tap restocks the usual pack and clears the alert, so the
+                // low-supply warning is actionable where it appears.
+                if (remaining > 0) {
+                    val refillIntent = Intent(context, NotificationReceiver::class.java).apply {
+                        action = NotificationReceiver.ACTION_REFILL
+                        putExtra("ITEM_ID", item.id)
+                    }
+                    val refillPending = PendingIntent.getBroadcast(
+                        context,
+                        item.id.toInt() + REFILL_ACTION_OFFSET,
+                        refillIntent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    addAction(
+                        R.drawable.ic_notification,
+                        context.getString(R.string.refill_notif_action, remaining, unitName),
+                        refillPending
+                    )
+                }
+            }
             .build()
 
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

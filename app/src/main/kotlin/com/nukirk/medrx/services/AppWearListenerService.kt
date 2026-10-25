@@ -235,6 +235,7 @@ class AppWearListenerService : WearableListenerService() {
                                     )
                                     if (newItem !== item) {
                                         items[i] = newItem
+                                        SupplyGroup.mirror(items, items[i])
                                         NotificationReceiver.scheduleNotification(applicationContext, items[i])
                                         resolvedIds += item.id
                                         updated = true

@@ -7,6 +7,7 @@
 package com.nukirk.medrx
 
 import android.annotation.SuppressLint
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -16,6 +17,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.Animatable
@@ -96,6 +98,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.nukirk.medrx.elements.NotificationsSettingsActivity.SnoozeDurationPopup
 import com.nukirk.medrx.services.DataRepository
 import com.nukirk.medrx.services.NotificationReceiver
 import com.nukirk.medrx.services.SkipReason
@@ -109,10 +112,41 @@ import kotlin.math.roundToInt
 
 class AlarmActivity : ComponentActivity() {
 
+    /** True once Take, Snooze or Skip has been sent, so Back cannot snooze too. */
+    private var responded = false
+
     private val closeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            responded = true
             finishAndRemoveTask()
         }
+    }
+
+    /**
+     * Backing out of the full-screen alarm is a snooze, not a silent dismissal:
+     * otherwise ignoring the screen would park the reminder without any
+     * re-alert and the dose would quietly drift past.
+     */
+    private fun snoozeAndFinish(itemIds: LongArray, notifId: Int, minutes: Int) {
+        if (responded) return
+        responded = true
+        val actionIntent = Intent(
+            this,
+            com.nukirk.medrx.services.NotificationReceiver::class.java
+        ).apply {
+            action = "ACTION_SNOOZE"
+            putExtra("ITEM_IDS", itemIds)
+            putExtra("NOTIF_ID", notifId)
+            putExtra("SNOOZE_MINUTES", SnoozePolicy.clampDuration(minutes))
+        }
+        sendBroadcast(actionIntent)
+        // Drop the reminder from the shade immediately: it announced a dose the
+        // user has just postponed, and waiting for the receiver to do it leaves
+        // a stale, unswipeable alert behind if that broadcast is delayed.
+        if (notifId != -1) {
+            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).cancel(notifId)
+        }
+        finishAndRemoveTask()
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -160,20 +194,30 @@ class AlarmActivity : ComponentActivity() {
         val colorCodeStr = currentItem?.colorCode
         val isGrouped = itemIds.size > 1
 
+        // The alarm screen owns the chosen length while it is open; Back uses
+        // the same value instead of falling back to the saved default.
+        var selectedSnoozeMinutes = snoozeDuration
+
         setContent {
             MedTheme(themeOverride = currentTheme) {
+                val screenSnoozeMinutes = remember { mutableIntStateOf(snoozeDuration) }
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
                     AlarmScreen(
                         title = itemTitle,
-                        snoozeDuration = snoozeDuration,
+                        snoozeMinutes = screenSnoozeMinutes.intValue,
+                        onSnoozeMinutesChange = { chosen ->
+                            screenSnoozeMinutes.intValue = chosen
+                            selectedSnoozeMinutes = chosen
+                        },
                         useSlider = useSlider,
                         iconName = iconName,
                         colorCode = colorCodeStr,
                         isGrouped = isGrouped,
                         onTake = {
+                            responded = true
                             val actionIntent = Intent(
                                 this@AlarmActivity,
                                 com.nukirk.medrx.services.NotificationReceiver::class.java
@@ -185,19 +229,11 @@ class AlarmActivity : ComponentActivity() {
                             sendBroadcast(actionIntent)
                             finishAndRemoveTask()
                         },
-                        onSnooze = {
-                            val actionIntent = Intent(
-                                this@AlarmActivity,
-                                com.nukirk.medrx.services.NotificationReceiver::class.java
-                            ).apply {
-                                action = "ACTION_SNOOZE"
-                                putExtra("ITEM_IDS", itemIds)
-                                putExtra("NOTIF_ID", notifId)
-                            }
-                            sendBroadcast(actionIntent)
-                            finishAndRemoveTask()
+                        onSnooze = { minutes ->
+                            snoozeAndFinish(itemIds, notifId, minutes)
                         },
                         onSkip = { reason, note ->
+                            responded = true
                             val pending = NotificationReceiver.prepareSkipPendingIntent(
                                 this@AlarmActivity,
                                 itemIds,
@@ -215,6 +251,15 @@ class AlarmActivity : ComponentActivity() {
                 }
             }
         }
+
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    snoozeAndFinish(itemIds, notifId, selectedSnoozeMinutes)
+                }
+            }
+        )
     }
 
     override fun onDestroy() {
@@ -299,16 +344,18 @@ fun AnimatedAlarmButton(
 @Composable
 fun AlarmScreen(
     title: String,
-    snoozeDuration: Int,
+    snoozeMinutes: Int,
+    onSnoozeMinutesChange: (Int) -> Unit,
     useSlider: Boolean,
     iconName: String?,
     colorCode: String?,
     isGrouped: Boolean = false,
     onTake: () -> Unit,
-    onSnooze: () -> Unit,
+    onSnooze: (minutes: Int) -> Unit,
     onSkip: (reason: SkipReason, note: String?) -> Unit
 ) {
     var showSkipSheet by remember { mutableStateOf(false) }
+    var showSnoozePicker by remember { mutableStateOf(false) }
     val icSick = ImageVector.vectorResource(R.drawable.ic_sick)
     val icMind = ImageVector.vectorResource(R.drawable.ic_mind)
     val icMixture = ImageVector.vectorResource(R.drawable.ic_mixture)
@@ -387,7 +434,7 @@ fun AlarmScreen(
         if (useSlider) {
             AlarmSlider(
                 onTake = onTake,
-                onSnooze = onSnooze,
+                onSnooze = { onSnooze(snoozeMinutes) },
                 onSkip = { showSkipSheet = true },
                 modifier = Modifier.widthIn(max = 400.dp)
             )
@@ -408,9 +455,9 @@ fun AlarmScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 AnimatedAlarmButton(
-                    text = alarmSnoozeActionText(snoozeDuration),
+                    text = alarmSnoozeActionText(snoozeMinutes),
                     icon = Icons.Rounded.Snooze,
-                    onClick = onSnooze,
+                    onClick = { onSnooze(snoozeMinutes) },
                     modifier = Modifier.weight(1f),
                     isPrimary = false
                 )
@@ -427,7 +474,15 @@ fun AlarmScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
+
+        AlarmSnoozePicker(
+            minutes = snoozeMinutes,
+            onSelect = onSnoozeMinutesChange,
+            onCustom = { showSnoozePicker = true }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         TextButton(onClick = { showSkipSheet = true }) {
             Icon(
@@ -442,6 +497,17 @@ fun AlarmScreen(
                 style = MaterialTheme.typography.labelLarge
             )
         }
+    }
+
+    if (showSnoozePicker) {
+        SnoozeDurationPopup(
+            currentDuration = snoozeMinutes,
+            onOptionSelected = { chosen ->
+                onSnoozeMinutesChange(SnoozePolicy.clampDuration(chosen))
+                showSnoozePicker = false
+            },
+            onDismiss = { showSnoozePicker = false }
+        )
     }
 
     if (showSkipSheet) {
@@ -534,6 +600,66 @@ fun SkipReasonSheet(
                 }
             }
         }
+    }
+}
+
+/** Quick snooze lengths offered on the full-screen alarm, plus a custom one. */
+@Composable
+fun AlarmSnoozePicker(
+    minutes: Int,
+    onSelect: (Int) -> Unit,
+    onCustom: () -> Unit
+) {
+    val quick = SnoozePolicy.QUICK_DURATION_PRESETS
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = stringResource(R.string.alarm_snooze_for),
+            fontFamily = GoogleSansFlex,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            quick.forEach { preset ->
+                FilterChip(
+                    selected = minutes == preset,
+                    onClick = { onSelect(preset) },
+                    label = {
+                        Text(
+                            text = alarmSnoozeChipText(preset),
+                            fontFamily = GoogleSansFlex,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                )
+            }
+            FilterChip(
+                selected = !quick.contains(minutes),
+                onClick = onCustom,
+                label = {
+                    Text(
+                        text = if (!quick.contains(minutes)) alarmSnoozeChipText(minutes)
+                        else stringResource(R.string.alarm_snooze_custom),
+                        fontFamily = GoogleSansFlex,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            )
+        }
+    }
+}
+
+/** Compact snooze length for a chip: "10 min" or "2 h". */
+@Composable
+fun alarmSnoozeChipText(minutes: Int): String {
+    val label = SnoozePolicy.label(minutes)
+    return if (label.useHours) {
+        stringResource(R.string.alarm_snooze_chip_hours, label.hours)
+    } else {
+        stringResource(R.string.alarm_snooze_chip_minutes, label.minutes)
     }
 }
 

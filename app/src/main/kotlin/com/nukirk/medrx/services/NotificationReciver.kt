@@ -52,6 +52,83 @@ class NotificationReceiver : BroadcastReceiver() {
         /** Undoes a skip that the snooze limit wrote automatically. */
         const val ACTION_UNDO_SNOOZE_SKIP = "ACTION_UNDO_SNOOZE_SKIP"
 
+        /** Fires when a posted reminder was left unanswered for one snooze interval. */
+        const val ACTION_NAG = "ACTION_NAG"
+
+        /** Refills a medication straight from its low-supply alert. */
+        const val ACTION_REFILL = "ACTION_REFILL"
+
+        /**
+         * Request-code offset for the unanswered-reminder follow-up alarm. Kept
+         * clear of the snooze (100000), content (200000), skip (300000) and
+         * skip-limit notice (400000) codes.
+         */
+        const val NAG_REQUEST_OFFSET = 500_000
+
+        /** Default length of one unanswered-reminder follow-up, in minutes. */
+        private fun nagMinutes(prefs: android.content.SharedPreferences): Int =
+            SnoozePolicy.clampDuration(
+                prefs.getInt(
+                    PREF_SNOOZE_DURATION,
+                    SnoozePolicy.DEFAULT_SNOOZE_DURATION_MINUTES
+                )
+            )
+
+        /**
+         * Arms the follow-up that turns ignoring a reminder into a re-alert
+         * instead of a free snooze.
+         */
+        private fun armNagAlarm(
+            context: Context,
+            itemIds: LongArray,
+            notifId: Int,
+            minutes: Int
+        ) {
+            if (itemIds.isEmpty()) return
+            try {
+                val leaderId = itemIds.min()
+                val intent = Intent(context, NotificationReceiver::class.java).apply {
+                    action = ACTION_NAG
+                    putExtra("ITEM_IDS", itemIds)
+                    putExtra("NOTIF_ID", notifId)
+                    putExtra("NAG_MINUTES", minutes)
+                }
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    leaderId.toInt() + NAG_REQUEST_OFFSET,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val alarmManager =
+                    context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                setAlarm(
+                    alarmManager,
+                    System.currentTimeMillis() + SnoozePolicy.clampDuration(minutes) * 60_000L,
+                    pendingIntent
+                )
+            } catch (_: Exception) {
+            }
+        }
+
+        /** Cancels the pending unanswered-reminder follow-up for [itemId]. */
+        private fun cancelPendingNagAlarm(
+            context: Context,
+            alarmManager: AlarmManager,
+            itemId: Long
+        ) {
+            val intent = Intent(context, NotificationReceiver::class.java).apply {
+                action = ACTION_NAG
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                itemId.toInt() + NAG_REQUEST_OFFSET,
+                intent,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            ) ?: return
+            alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
+        }
+
         /**
          * Request-code offset for the pending snooze alarm. Kept clear of the
          * fresh-fire (item id), content (200000), skip (300000) and skip-limit
@@ -117,6 +194,7 @@ class NotificationReceiver : BroadcastReceiver() {
                 val alarmManager =
                     context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
                 itemIds.forEach { cancelPendingSnoozeAlarm(context, alarmManager, it) }
+                itemIds.forEach { cancelPendingNagAlarm(context, alarmManager, it) }
 
                 context.sendBroadcast(
                     Intent("ACTION_CLOSE_ALARM_ACTIVITY").setPackage(context.packageName)
@@ -465,6 +543,85 @@ class NotificationReceiver : BroadcastReceiver() {
                 val notifManager =
                     context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 notifManager.notify(notifId, notification)
+                // Ignoring a reminder must not silently delay the dose: if this
+                // one is still unanswered after the snooze interval, ask again.
+                armNagAlarm(context, itemIds, notifId, nagMinutes(prefs))
+            }
+
+            ACTION_NAG -> {
+                val requested = intent.getLongArrayExtra("ITEM_IDS") ?: return
+                if (requested.isEmpty()) return
+                val notifId = intent.getIntExtra("NOTIF_ID", -1)
+                val today = LocalDate.now()
+                val items = DataRepository.loadData(context)
+                val due = items.filter { item ->
+                    item.id in requested.toSet() && ReminderSlots.isDueOn(item, today)
+                }
+                if (due.isEmpty()) return
+                val dueIds = due.map { it.id }
+                val leaderId = dueIds.min()
+                val count = SnoozeTracker.increment(context, leaderId, today)
+                val limitEnabled = prefs.getBoolean(PREF_SNOOZE_LIMIT_ENABLED, false)
+                val snoozeLimit = prefs.getInt(PREF_SNOOZE_LIMIT, SnoozePolicy.DEFAULT_SNOOZE_LIMIT)
+                val limitAction = SnoozeLimitAction.fromPref(
+                    prefs.getString(PREF_SNOOZE_LIMIT_ACTION, null)
+                )
+                val decision = ReminderNagPolicy.decide(
+                    count,
+                    limitEnabled,
+                    snoozeLimit,
+                    limitAction
+                )
+                if (decision == NagDecision.RE_ALERT) {
+                    // Re-post the same reminder; posting arms the next
+                    // follow-up, so this loops only while the setting allows.
+                    val again = Intent(context, NotificationReceiver::class.java).apply {
+                        this.action = ACTION_SHOW_NOTIFICATION
+                        putExtra("ITEM_ID", leaderId)
+                        putExtra("ITEM_IDS", dueIds.toLongArray())
+                        putExtra("IS_SNOOZE", true)
+                    }
+                    context.sendBroadcast(again)
+                    return
+                }
+
+                val notifManager =
+                    context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                if (notifId != -1) notifManager.cancel(notifId)
+                ReminderSlots.reminderIds(dueIds, items).forEach { notifManager.cancel(it) }
+
+                if (decision == NagDecision.STOP) {
+                    // Out of nudges: stop making noise and leave the dose
+                    // unlogged, so it reads as missed rather than as a skip the
+                    // user never chose.
+                    SnoozeTracker.clear(context, dueIds.toLongArray(), today)
+                } else {
+                    recordSnoozeLimitOutcome(
+                        context,
+                        dueIds,
+                        today,
+                        if (decision == NagDecision.CONVERT_TO_DELAY) SkipReason.DELAYED
+                        else SkipReason.SNOOZED_AWAY,
+                        snoozeLimit
+                    )
+                }
+                context.sendBroadcast(
+                    Intent("ACTION_CLOSE_ALARM_ACTIVITY").setPackage(context.packageName)
+                )
+            }
+
+            ACTION_REFILL -> {
+                val id = intent.getLongExtra("ITEM_ID", -1L)
+                if (id == -1L) return
+                val items = DataRepository.loadData(context).toMutableList()
+                val updated = SupplyGroup.refill(items, id) ?: return
+                DataRepository.saveData(context, items)
+                InventoryService.cancelLowSupplyNotification(context, updated)
+                InventoryService.evaluateAll(context, items)
+                DataRepository.saveData(context, items)
+                context.sendBroadcast(
+                    Intent("com.nukirk.medrx.REFRESH_DATA").setPackage(context.packageName)
+                )
             }
 
             ACTION_TAKEN -> {
@@ -491,6 +648,9 @@ class NotificationReceiver : BroadcastReceiver() {
                             )
                             if (updated !== item) {
                                 items[index] = updated
+                                // One balance per medication: every dose slot
+                                // of this medicine shows the same count.
+                                SupplyGroup.mirror(items, items[index])
                                 isDataUpdated = true
                                 scheduleNotification(context, items[index])
                             }
@@ -641,9 +801,14 @@ class NotificationReceiver : BroadcastReceiver() {
                 }
 
                 if (itemIds != null) {
-                    val snoozeDuration = prefs.getInt(
-                        PREF_SNOOZE_DURATION,
-                        SnoozePolicy.DEFAULT_SNOOZE_DURATION_MINUTES
+                    val snoozeDuration = SnoozePolicy.clampDuration(
+                        intent.getIntExtra(
+                            "SNOOZE_MINUTES",
+                            prefs.getInt(
+                                PREF_SNOOZE_DURATION,
+                                SnoozePolicy.DEFAULT_SNOOZE_DURATION_MINUTES
+                            )
+                        )
                     )
                     val limitEnabled = prefs.getBoolean(PREF_SNOOZE_LIMIT_ENABLED, false)
                     val snoozeLimit = prefs.getInt(PREF_SNOOZE_LIMIT, SnoozePolicy.DEFAULT_SNOOZE_LIMIT)
@@ -685,6 +850,7 @@ class NotificationReceiver : BroadcastReceiver() {
 
                     val alarmManager =
                         context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+                    itemIds.forEach { cancelPendingNagAlarm(context, alarmManager, it) }
 
                     if (reArm.isNotEmpty()) {
                         // One alarm carries the whole surviving group, so a

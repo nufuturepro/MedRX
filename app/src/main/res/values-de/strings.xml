@@ -455,7 +455,7 @@
     <string name="card_refill_desc">Nachfüllung zum Vorrat hinzufügen</string>
     <string name="tap_again_to_refill">%1$d %2$s zum Vorrat hinzufügen? Zum Bestätigen erneut tippen</string>
     <string name="whatsnew_title">Neu in Med Rx</string>
-    <string name="whatsnew_body">Neu in dieser Version:\n\n• Eine Erinnerung, die mehrere Dosen zur selben Zeit bündelt, verschwindet jetzt, sobald du eine davon einnimmst oder überspringst — vorher konnte nur die erste Dosis sie entfernen, und die Erinnerung blieb stehen\n• Das vorab geplante Überspringen der heutigen Dosis, das Löschen einer Dosis und das Archivieren eines Medikaments entfernen die Erinnerung nun ebenfalls; veraltete Erinnerungen werden bei Planänderungen automatisch aufgeräumt\n• Versionsnummern ohne \"-fork\"-Suffix — 2.2.4 ist Med Rxs eigene Zählung, Tags heißen jetzt v2.2.4\n\nDeine Daten, Erinnerungen und der Verlauf bleiben unverändert erhalten.</string>
+    <string name="whatsnew_body">Neu in dieser Version:\n\n• Nachfüllen über die Vorratsanzeige: Tippe auf „30 Tabletten übrig“, um eine Packung hinzuzufügen, die neue Summe zu sehen oder die tatsächlich gezählte Menge einzutragen\n• Erinnerungen warten nicht mehr still: Eine unbeantwortete Erinnerung meldet sich im Schlummer-Intervall erneut (bis zum Schlummer-Limit oder dreimal), und das Verlassen des Vollbild-Alarms zählt als Schlummern\n• Ein Bestand pro Medikament — ein Medikament mit zwei Tageszeiten kann nicht mehr auseinanderlaufen oder doppelt nachgefüllt werden\n• Schlummerdauer direkt im Vollbild-Alarm wählen (5/10/15/30 Min. oder eigener Wert); Zurück nutzt sie ebenfalls\n\nWenn eine Zahl falsch aussieht: Vorrats-Sheet öffnen und einmal „Genaue Anzahl festlegen“ verwenden.</string>
     <string name="whatsnew_community_hint">Fragen oder Ideen? Die Schaltfläche „Community“ öffnet GitHub Discussions.</string>
     <string name="whatsnew_releases">Releases</string>
     <string name="whatsnew_community">Community</string>
@@ -495,4 +495,19 @@
     <string name="prn_stats_empty">No as-needed uses this month</string>
 
 
+
+    <string name="refill_sheet_title">Nachfüllen: %1$s</string>
+    <string name="refill_current">%1$d %2$s übrig</string>
+    <string name="refill_add_label">%1$s hinzufügen</string>
+    <string name="refill_preview">%1$d → %2$d %3$s übrig</string>
+    <string name="refill_confirm">%1$d %2$s hinzufügen</string>
+    <string name="refill_set_exact">Genaue Anzahl festlegen</string>
+    <string name="refill_exact_label">Gezählt: %1$s</string>
+    <string name="refill_exact_desc">Nutze das, wenn du die Packung gezählt hast und die Zahl der App nicht stimmt.</string>
+    <string name="refill_exact_apply">Festlegen</string>
+    <string name="refill_notif_action">Nachfüllen: %1$d %2$s</string>
+    <string name="alarm_snooze_for">Schlummern für</string>
+    <string name="alarm_snooze_chip_minutes">%1$d Min.</string>
+    <string name="alarm_snooze_chip_hours">%1$d Std.</string>
+    <string name="alarm_snooze_custom">Eigene …</string>
 </resources>

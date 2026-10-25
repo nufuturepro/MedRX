@@ -114,6 +114,7 @@ import com.nukirk.medrx.elements.MainActivity.IllnessesBottomSheet
 import com.nukirk.medrx.elements.MainActivity.MainFAB
 import com.nukirk.medrx.elements.MainActivity.AsNeededTray
 import com.nukirk.medrx.elements.MainActivity.MedDataCard
+import com.nukirk.medrx.elements.MainActivity.RefillSupplySheet
 import com.nukirk.medrx.elements.MainActivity.SwipeGestureHint
 import com.nukirk.medrx.elements.MainActivity.MedSnackbarHost
 import com.nukirk.medrx.elements.MainActivity.MedicineBottomSheet
@@ -156,6 +157,7 @@ fun MedApp(
     var showDatePicker by remember { mutableStateOf(false) }
     var activeSwipingItemId by remember { mutableStateOf<Long?>(null) }
     var noteToShow by remember { mutableStateOf<String?>(null) }
+    var refillItem by remember { mutableStateOf<MedData?>(null) }
     // Deletion is destructive and hard to undo by muscle memory, so a swipe
     // only *requests* it; the dialog below is what actually deletes.
     var pendingDelete by remember { mutableStateOf<Pair<MedData, LocalDate>?>(null) }
@@ -861,9 +863,8 @@ fun MedApp(
                                                                                         item to pageDate
                                                                                 },
                                                                                 onRefill = {
-                                                                                    viewModel.refillSupply(
+                                                                                    refillItem =
                                                                                         item
-                                                                                    )
                                                                                 },
                                                                                 onEditSkipNote = {
                                                                                     skipNoteEdit =
@@ -1099,9 +1100,8 @@ fun MedApp(
                                                                                         item to pageDate
                                                                                 },
                                                                                 onRefill = {
-                                                                                    viewModel.refillSupply(
+                                                                                    refillItem =
                                                                                         item
-                                                                                    )
                                                                                 },
                                                                                 onEditSkipNote = {
                                                                                     skipNoteEdit =
@@ -1403,6 +1403,21 @@ fun MedApp(
                 initialText = preFilledText
             )
         }
+    }
+
+    refillItem?.let { item ->
+        RefillSupplySheet(
+            item = viewModel.items.firstOrNull { it.id == item.id } ?: item,
+            onRefill = { amount ->
+                viewModel.refillSupply(item, amount)
+                refillItem = null
+            },
+            onSetExact = { count ->
+                viewModel.setSupplyExact(item, count)
+                refillItem = null
+            },
+            onDismiss = { refillItem = null }
+        )
     }
 
     if (noteToShow != null) {

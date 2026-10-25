@@ -413,7 +413,7 @@
     <string name="card_refill_desc">Ajouter une recharge au stock</string>
     <string name="tap_again_to_refill">Ajouter %1$d %2$s au stock ? Touchez à nouveau pour confirmer</string>
     <string name="whatsnew_title">Nouveautés de Med Rx</string>
-    <string name="whatsnew_body">Nouveautés de cette version :\n\n• Un rappel qui regroupe plusieurs doses à la même heure disparaît désormais dès que vous prenez ou sautez l\'une d\'elles — avant, seule la première dose pouvait l\'\u00E9ffacer et le rappel restait affiché\n• Sauter à l\'avance la dose du jour, supprimer une dose et archiver un médicament retirent aussi leur rappel, et les rappels obsolètes sont nettoyés dès que le planning change\n• Les numéros de version n\'ont plus le suffixe « -fork » : 2.2.4 est la numérotation propre de Med Rx, avec des étiquettes v2.2.4\n\nVos données, rappels et historique sont conservés à l’identique.</string>
+    <string name="whatsnew_body">Nouveautés de cette version :\n\n• Recharger depuis le badge de stock : touchez « 30 comprimés restants » pour ajouter une boîte, voir le nouveau total ou saisir le compte réel\n• Les rappels n’attendent plus en silence : un rappel sans réponse ré-alerte à l’intervalle de report (jusqu’à votre limite, ou trois fois), et quitter l’alarme plein écran compte comme un report\n• Un seul stock par médicament : un traitement à deux prises par jour ne peut plus diverger ni être rechargé deux fois\n• Choisissez la durée du report sur l’alarme plein écran (5/10/15/30 min ou la vôtre) ; Retour l’utilise aussi\n\nSi un chiffre semble faux, ouvrez la fiche de recharge et utilisez « Saisir le compte exact » une fois.</string>
     <string name="whatsnew_community_hint">Des questions ou des idées ? Le bouton « Communauté » ouvre GitHub Discussions.</string>
     <string name="whatsnew_releases">Versions</string>
     <string name="whatsnew_community">Communauté</string>
@@ -495,4 +495,19 @@
     <string name="prn_stats_empty">No as-needed uses this month</string>
 
 
+
+    <string name="refill_sheet_title">Recharger %1$s</string>
+    <string name="refill_current">%1$d %2$s restants</string>
+    <string name="refill_add_label">Ajouter %1$s</string>
+    <string name="refill_preview">%1$d → %2$d %3$s restants</string>
+    <string name="refill_confirm">Ajouter %1$d %2$s</string>
+    <string name="refill_set_exact">Saisir le compte exact</string>
+    <string name="refill_exact_label">%1$s comptés</string>
+    <string name="refill_exact_desc">À utiliser après avoir compté le flacon, si le chiffre de l’app est faux.</string>
+    <string name="refill_exact_apply">Valider</string>
+    <string name="refill_notif_action">Recharger %1$d %2$s</string>
+    <string name="alarm_snooze_for">Report de</string>
+    <string name="alarm_snooze_chip_minutes">%1$d min</string>
+    <string name="alarm_snooze_chip_hours">%1$d h</string>
+    <string name="alarm_snooze_custom">Personnalisé…</string>
 </resources>

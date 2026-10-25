@@ -469,7 +469,7 @@
     <string name="card_refill_desc">Add a refill to supply</string>
     <string name="tap_again_to_refill">Add %1$d %2$s to supply? Tap again to confirm</string>
     <string name="whatsnew_title">What\'s new in Med Rx</string>
-    <string name="whatsnew_body">New in this build:\n\n• A reminder that groups several doses at one time is now cleared when you take or skip any one of them — before, only the first dose could clear it, which left a reminder that would not go away\n• Pre-skipping today\'s dose, deleting a dose and archiving a med now take their reminder down too, and stale reminders are swept when a schedule changes\n• Version numbers dropped the \"-fork\" suffix — 2.2.4 is Med Rx\'s own line, tagged v2.2.4\n\nYour data, reminders, and history carry over unchanged.</string>
+    <string name="whatsnew_body">New in this build:\n\n• Refill from the stock badge: tap \"30 tablets left\" to add a pack, preview the new total, or set the count you actually have\n• Reminders no longer wait quietly: an unanswered reminder re-alerts at your snooze interval (up to your snooze limit, or three times), and backing out of the full-screen alarm counts as a snooze\n• One stock count per medication — a medicine with two daily times can no longer drift apart or be refilled twice\n• Pick the snooze length on the full-screen alarm (5/10/15/30 min or your own); Back uses it too\n\nIf a count looks wrong, open the refill sheet and use \"Set exact count\" once.</string>
     <string name="whatsnew_community_hint">Questions or ideas? The Community button opens GitHub Discussions.</string>
     <string name="whatsnew_releases">Releases</string>
     <string name="whatsnew_community">Community</string>
@@ -508,4 +508,19 @@
     <string name="prn_stats_title">As-needed uses this month</string>
     <string name="prn_stats_empty">No as-needed uses this month</string>
 
+
+    <string name="refill_sheet_title">Refill %1$s</string>
+    <string name="refill_current">%1$d %2$s left</string>
+    <string name="refill_add_label">Add %1$s</string>
+    <string name="refill_preview">%1$d → %2$d %3$s left</string>
+    <string name="refill_confirm">Add %1$d %2$s</string>
+    <string name="refill_set_exact">Set exact count</string>
+    <string name="refill_exact_label">Counted %1$s</string>
+    <string name="refill_exact_desc">Use this when you counted the bottle and the app\'s number is wrong.</string>
+    <string name="refill_exact_apply">Set</string>
+    <string name="refill_notif_action">Refill %1$d %2$s</string>
+    <string name="alarm_snooze_for">Snooze for</string>
+    <string name="alarm_snooze_chip_minutes">%1$d min</string>
+    <string name="alarm_snooze_chip_hours">%1$d h</string>
+    <string name="alarm_snooze_custom">Custom…</string>
 </resources>

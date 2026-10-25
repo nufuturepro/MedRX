@@ -413,7 +413,7 @@
     <string name="card_refill_desc">Adicionar uma recarga ao estoque</string>
     <string name="tap_again_to_refill">Adicionar %1$d %2$s ao estoque? Toque novamente para confirmar</string>
     <string name="whatsnew_title">Novidades do Med Rx</string>
-    <string name="whatsnew_body">Novidades desta versão:\n\n• Um lembrete que reúne várias doses no mesmo horário agora é apagado quando você toma ou pula qualquer uma delas — antes, só a primeira dose conseguia apagá-lo e o lembrete ficava preso\n• Pular a dose de hoje com antecedência, excluir uma dose e arquivar um medicamento também removem o lembrete, e lembretes obsoletos são limpos quando o esquema muda\n• Os números de versão não usam mais o sufixo \"-fork\": 2.2.4 é a numeração própria do Med Rx, com tags v2.2.4\n\nSeus dados, lembretes e histórico permanecem intactos.</string>
+    <string name="whatsnew_body">Novedades desta versão:\n\n• Reabastecer pelo selo de estoque: toque em «restam 30 comprimidos» para adicionar uma caixa, ver o novo total ou informar a contagem real\n• Os lembretes não esperam mais em silêncio: um lembrete sem resposta volta a avisar no intervalo de adiamento (até o seu limite ou três vezes), e sair do alarme em tela cheia conta como adiar\n• Um único estoque por medicamento: um remédio com dois horários diários não pode mais divergir nem ser reabastecido duas vezes\n• Escolha a duração do adiamento no alarme em tela cheia (5/10/15/30 min ou a sua); Voltar também usa essa duração\n\nSe algum número parecer errado, abra a folha de reabastecimento e use «Definir contagem exata» uma vez.</string>
     <string name="whatsnew_community_hint">Dúvidas ou ideias? O botão «Comunidade» abre o GitHub Discussions.</string>
     <string name="whatsnew_releases">Versões</string>
     <string name="whatsnew_community">Comunidade</string>
@@ -495,4 +495,19 @@
     <string name="prn_stats_empty">No as-needed uses this month</string>
 
 
+
+    <string name="refill_sheet_title">Reabastecer %1$s</string>
+    <string name="refill_current">Restam %1$d %2$s</string>
+    <string name="refill_add_label">Adicionar %1$s</string>
+    <string name="refill_preview">%1$d → %2$d %3$s restantes</string>
+    <string name="refill_confirm">Adicionar %1$d %2$s</string>
+    <string name="refill_set_exact">Definir contagem exata</string>
+    <string name="refill_exact_label">%1$s contados</string>
+    <string name="refill_exact_desc">Use quando contou o frasco e o número do app está errado.</string>
+    <string name="refill_exact_apply">Definir</string>
+    <string name="refill_notif_action">Reabastecer %1$d %2$s</string>
+    <string name="alarm_snooze_for">Adiar por</string>
+    <string name="alarm_snooze_chip_minutes">%1$d min</string>
+    <string name="alarm_snooze_chip_hours">%1$d h</string>
+    <string name="alarm_snooze_custom">Personalizado…</string>
 </resources>

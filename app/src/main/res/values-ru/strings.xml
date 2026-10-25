@@ -413,7 +413,7 @@
     <string name="card_refill_desc">Добавить пополнение к запасам</string>
     <string name="tap_again_to_refill">Добавить %1$d к запасам? Нажмите ещё раз для подтверждения</string>
     <string name="whatsnew_title">Что нового в Med Rx</string>
-    <string name="whatsnew_body">Что нового в этой версии:\n\n• Напоминание, объединяющее несколько доз на одно время, теперь убирается, как только вы примете или пропустите любую из них — раньше это могла сделать только первая доза, и напоминание оставалось висеть\n• Досрочный пропуск сегодняшней дозы, удаление дозы и архивирование препарата тоже убирают напоминание, а устаревшие напоминания удаляются при изменении расписания\n• В номерах версий больше нет суффикса «-fork»: 2.2.4 — собственная нумерация Med Rx с тегами v2.2.4\n\nВаши данные, напоминания и история сохраняются без изменений.</string>
+    <string name="whatsnew_body">Что нового в этой сборке:\n\n• Пополнение с бейджа запаса: нажмите «осталось 30 таблеток», чтобы добавить упаковку, увидеть новый итог или указать реально посчитанное количество\n• Напоминания больше не ждут молча: неотвеченное напоминание повторится через интервал откладывания (до вашего лимита или три раза), а выход из полноэкранного будильника считается откладыванием\n• Один запас на лекарство: препарат с двумя приёмами в день больше не расходится по слотам и не пополняется дважды\n• Длительность откладывания выбирается на полноэкранном будильнике (5/10/15/30 мин или своя), и кнопка «Назад» использует её же\n\nЕсли число выглядит неверным, откройте окно пополнения и один раз укажите точное количество.</string>
     <string name="whatsnew_community_hint">Есть вопросы или идеи? Кнопка «Сообщество» открывает GitHub Discussions.</string>
     <string name="whatsnew_releases">Релизы</string>
     <string name="whatsnew_community">Сообщество</string>
@@ -495,4 +495,19 @@
     <string name="prn_stats_empty">No as-needed uses this month</string>
 
 
+
+    <string name="refill_sheet_title">Пополнить: %1$s</string>
+    <string name="refill_current">Осталось %1$d %2$s</string>
+    <string name="refill_add_label">Добавить %1$s</string>
+    <string name="refill_preview">%1$d → %2$d %3$s осталось</string>
+    <string name="refill_confirm">Добавить %1$d %2$s</string>
+    <string name="refill_set_exact">Указать точное количество</string>
+    <string name="refill_exact_label">Посчитано: %1$s</string>
+    <string name="refill_exact_desc">Используйте, если пересчитали упаковку, а число в приложении неверно.</string>
+    <string name="refill_exact_apply">Задать</string>
+    <string name="refill_notif_action">Пополнить: %1$d %2$s</string>
+    <string name="alarm_snooze_for">Отложить на</string>
+    <string name="alarm_snooze_chip_minutes">%1$d мин</string>
+    <string name="alarm_snooze_chip_hours">%1$d ч</string>
+    <string name="alarm_snooze_custom">Другой…</string>
 </resources>

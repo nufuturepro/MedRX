@@ -181,8 +181,6 @@ fun MedDataCard(
     // within the window actually un-logs the dose. Tapping again while pending
     // re-confirms the dose instead of toggling history.
     var pendingUntakeUntil by remember(item.id) { mutableStateOf(0L) }
-    // Two-tap confirmation for the one-tap refill, same pattern as un-take.
-    var pendingRefillUntil by remember(item.id) { mutableStateOf(0L) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -327,7 +325,18 @@ fun MedDataCard(
                     if (isMedicine && item.supplyDosesLeft != null) {
                         val low = item.supplyLowThreshold != null &&
                                 item.supplyDosesLeft <= item.supplyLowThreshold
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        // The badge is the refill affordance: tapping the count
+                        // opens the refill sheet with the amount filled in.
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onRefill()
+                                }
+                                .padding(horizontal = 2.dp, vertical = 2.dp)
+                        ) {
                             Icon(
                                 Icons.Rounded.Inventory2,
                                 null,
@@ -350,6 +359,14 @@ fun MedDataCard(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 softWrap = false
+                            )
+                            Icon(
+                                Icons.Rounded.Autorenew,
+                                contentDescription = stringResource(R.string.card_refill_desc),
+                                modifier = Modifier
+                                    .padding(start = 4.dp)
+                                    .size(12.dp),
+                                tint = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
@@ -546,22 +563,7 @@ fun MedDataCard(
                             IconButton(
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    val now = System.currentTimeMillis()
-                                    if (now < pendingRefillUntil) {
-                                        pendingRefillUntil = 0L
-                                        onRefill()
-                                    } else {
-                                        pendingRefillUntil = now + UNTAKE_CONFIRM_WINDOW_MS
-                                        Toast.makeText(
-                                            context,
-                                            context.getString(
-                                                R.string.tap_again_to_refill,
-                                                item.supplyDosesPerRefill,
-                                                context.getString(item.supplyUnit.labelResId())
-                                            ),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
+                                    onRefill()
                                 },
                                 modifier = Modifier.size(30.dp)
                             ) {
