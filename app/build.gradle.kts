@@ -26,11 +26,11 @@ android {
         applicationId = "com.nukirk.medrx"
         minSdk = 26
         targetSdk = 37
-        versionCode = 27
+        versionCode = 28
         // Med Rx's own line: no "-fork" suffix. The release tag has to keep
         // this shape (v2.2.4), because the in-app updater compares the tag
         // against versionName and a mismatch silently stops offering updates.
-        versionName = "2.2.5"
+        versionName = "2.2.6"
     }
 
     signingConfigs {

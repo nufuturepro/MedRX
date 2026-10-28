@@ -9,6 +9,7 @@ import androidx.core.app.NotificationCompat
 import com.nukirk.medrx.MainActivity
 import com.nukirk.medrx.R
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 
 /**
@@ -154,6 +155,49 @@ object InventoryService {
                 )
             }
         }
+    }
+
+    /**
+     * Corrects the recorded clock time of a dose that is already logged.
+     *
+     * Only the record moves: the dose stays taken, the stock and its alert state
+     * are untouched, and no ledger row is added. The day's TAKEN ledger row
+     * follows the correction so the history and the ledger never disagree about
+     * when the dose happened — its delta and balanceAfter are copied verbatim,
+     * because a time change moves no stock.
+     *
+     * Data logged before the ledger existed has no TAKEN row for the day: the
+     * history is still corrected and no row is invented. A time in the future is
+     * clamped to [now] (only reachable for today); a past day accepts any clock
+     * time. Returns [item] itself when there is nothing to change.
+     */
+    fun applyTakenTimeEdit(
+        item: MedData,
+        date: LocalDate,
+        newTime: LocalTime,
+        now: LocalDateTime = LocalDateTime.now()
+    ): MedData {
+        val logged = item.takenHistory[date] ?: return item
+        val nowTime = now.toLocalTime()
+        val safeTime = if (date == now.toLocalDate() && newTime.isAfter(nowTime)) nowTime else newTime
+
+        val ledgerIndex = item.supplyLedger.indexOfLast {
+            it.kind == SupplyChangeKind.TAKEN && it.date == date
+        }
+        val ledger = if (ledgerIndex == -1 || item.supplyLedger[ledgerIndex].time == safeTime) {
+            item.supplyLedger
+        } else {
+            item.supplyLedger.toMutableList().also { rows ->
+                rows[ledgerIndex] = rows[ledgerIndex].copy(time = safeTime)
+            }
+        }
+        if (logged == safeTime && ledger === item.supplyLedger) return item
+
+        return item.copy(
+            takenHistory = if (logged == safeTime) item.takenHistory
+            else HashMap(item.takenHistory).apply { put(date, safeTime) },
+            supplyLedger = ledger
+        )
     }
 
     /**

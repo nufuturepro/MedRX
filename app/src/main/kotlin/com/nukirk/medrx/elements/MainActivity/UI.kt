@@ -120,7 +120,8 @@ fun MedDataCard(
     onLongClick: () -> Unit,
     onSkip: () -> Unit = {},
     onRefill: () -> Unit = {},
-    onEditSkipNote: () -> Unit = {}
+    onEditSkipNote: () -> Unit = {},
+    onEditTakenTime: () -> Unit = {}
 ) {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -383,27 +384,48 @@ fun MedDataCard(
                                     )
                                 } "
 
-                                Icon(
-                                    Icons.Rounded.Schedule,
-                                    null,
-                                    modifier = Modifier.size(12.dp),
-                                    tint = cardContentColor.copy(alpha = 0.7f)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    stringResource(
-                                        R.string.status_taken_format,
-                                        datePart,
-                                        takenTime
-                                    ),
-                                    fontFamily = GoogleSansFlex,
-                                    fontWeight = FontWeight.Normal,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = cardContentColor.copy(alpha = 0.7f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    softWrap = false
-                                )
+                                // The recorded time is what a late log gets wrong
+                                // (taken at 08:10, tapped at 11:40), so the line
+                                // that shows it is the way to correct it.
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onEditTakenTime()
+                                        }
+                                        .padding(top = 2.dp, end = 4.dp, bottom = 2.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.Schedule,
+                                        null,
+                                        modifier = Modifier.size(12.dp),
+                                        tint = cardContentColor.copy(alpha = 0.7f)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        stringResource(
+                                            R.string.status_taken_format,
+                                            datePart,
+                                            takenTime
+                                        ),
+                                        fontFamily = GoogleSansFlex,
+                                        fontWeight = FontWeight.Normal,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = cardContentColor.copy(alpha = 0.7f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        softWrap = false
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        Icons.Rounded.Edit,
+                                        contentDescription = stringResource(R.string.dose_time_edit_title),
+                                        modifier = Modifier.size(12.dp),
+                                        tint = cardContentColor.copy(alpha = 0.5f)
+                                    )
+                                }
                             } else if (isSkippedToday && skipRecord != null) {
                                 val skipTime =
                                     skipRecord.time.format(DateTimeFormatter.ofPattern("HH:mm"))
@@ -498,7 +520,7 @@ fun MedDataCard(
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Icon(
                                     Icons.Rounded.Edit,
-                                    contentDescription = stringResource(R.string.skip_note_edit_title),
+                                    contentDescription = stringResource(R.string.skip_edit_title),
                                     modifier = Modifier.size(12.dp),
                                     tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f)
                                 )

@@ -4,18 +4,15 @@ package com.nukirk.medrx.elements.MainActivity
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.FontWeight
@@ -23,47 +20,69 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.nukirk.medrx.ExpressiveTextButton
 import com.nukirk.medrx.R
+import com.nukirk.medrx.TimeSelectorItem
+import com.nukirk.medrx.elements.TimePicker
 import com.nukirk.medrx.ui.theme.GoogleSansFlex
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 /**
- * Edits the note attached to a skip that has already been recorded.
+ * Corrects the recorded clock time of a dose that is already logged.
  *
- * Notes are jotted down mid-reminder, so they need a way back in: this opens
- * prefilled from the card's skip detail line, and saving a blank field removes
- * the note. Only the note is replaceable — the reason and the skip itself are
- * changed elsewhere.
+ * The picker opens on the stored time, so opening this just to look is
+ * harmless. Saving moves the record only: the dose stays taken, the supply
+ * count does not move, and the ledger row for the day follows the correction.
+ * That is what makes this safe for the real case — a dose taken at 08:10 but
+ * logged at 11:40 — where un-logging and taking it again would stamp the wrong
+ * time twice.
  */
 @Composable
-fun SkipNoteEditorDialog(
-    initialNote: String?,
+fun DoseTimeEditorDialog(
+    date: LocalDate,
+    initialTime: LocalTime,
     onDismiss: () -> Unit,
-    onConfirm: (String?) -> Unit
+    onConfirm: (LocalTime) -> Unit
 ) {
-    var note by remember { mutableStateOf(initialNote.orEmpty()) }
+    var time by remember { mutableStateOf(initialTime) }
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    if (showTimePicker) {
+        TimePicker(
+            onDismiss = { showTimePicker = false },
+            onConfirm = { picked: LocalTime ->
+                time = picked
+                showTimePicker = false
+            },
+            initialTime = time
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = false),
         title = {
             Text(
-                text = stringResource(R.string.skip_note_edit_title),
+                text = stringResource(R.string.dose_time_edit_title),
                 fontFamily = GoogleSansFlex,
                 fontWeight = FontWeight.Bold
             )
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.alarm_skip_note_label)) },
-                    placeholder = { Text(stringResource(R.string.alarm_skip_note_hint)) },
-                    minLines = 1,
-                    maxLines = 3
+                Text(
+                    text = date.format(DateTimeFormatter.ofPattern("dd MMM yyyy")),
+                    fontFamily = GoogleSansFlex,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TimeSelectorItem(
+                    label = stringResource(R.string.time_label),
+                    time = time,
+                    onClick = { showTimePicker = true }
                 )
                 Text(
-                    text = stringResource(R.string.skip_note_edit_help),
+                    text = stringResource(R.string.dose_time_edit_help),
                     fontFamily = GoogleSansFlex,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -72,7 +91,7 @@ fun SkipNoteEditorDialog(
         },
         confirmButton = {
             ExpressiveTextButton(
-                onClick = { onConfirm(note) },
+                onClick = { onConfirm(time) },
                 text = stringResource(R.string.save_action),
                 contentColor = MaterialTheme.colorScheme.primary
             )

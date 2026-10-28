@@ -119,7 +119,8 @@ import com.nukirk.medrx.elements.MainActivity.SwipeGestureHint
 import com.nukirk.medrx.elements.MainActivity.MedSnackbarHost
 import com.nukirk.medrx.elements.MainActivity.MedicineBottomSheet
 import com.nukirk.medrx.elements.MainActivity.NotesBottomSheet
-import com.nukirk.medrx.elements.MainActivity.SkipNoteEditorDialog
+import com.nukirk.medrx.elements.MainActivity.DoseTimeEditorDialog
+import com.nukirk.medrx.elements.MainActivity.SkipDetailEditorDialog
 import com.nukirk.medrx.elements.MainActivity.Tabs.StatsTab
 import com.nukirk.medrx.elements.MainActivity.Tabs.YouTab
 import com.nukirk.medrx.elements.MainActivity.WeeklyCalendarPager
@@ -161,9 +162,13 @@ fun MedApp(
     // Deletion is destructive and hard to undo by muscle memory, so a swipe
     // only *requests* it; the dialog below is what actually deletes.
     var pendingDelete by remember { mutableStateOf<Pair<MedData, LocalDate>?>(null) }
-    // The note on a recorded skip stays editable: the card's skip detail line
-    // reopens it here instead of forcing an un-skip/re-skip round trip.
-    var skipNoteEdit by remember { mutableStateOf<Pair<MedData, LocalDate>?>(null) }
+    // What a recorded skip says stays editable (its time and its note): the
+    // card's skip detail line reopens it here instead of forcing an
+    // un-skip/re-skip round trip.
+    var skipDetailEdit by remember { mutableStateOf<Pair<MedData, LocalDate>?>(null) }
+    // A dose logged late keeps the tap time, so the card's taken line opens a
+    // time editor for that day.
+    var takenTimeEdit by remember { mutableStateOf<Pair<MedData, LocalDate>?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -867,7 +872,11 @@ fun MedApp(
                                                                                         item
                                                                                 },
                                                                                 onEditSkipNote = {
-                                                                                    skipNoteEdit =
+                                                                                    skipDetailEdit =
+                                                                                        item to pageDate
+                                                                                },
+                                                                                onEditTakenTime = {
+                                                                                    takenTimeEdit =
                                                                                         item to pageDate
                                                                                 }
                                                                             )
@@ -1104,7 +1113,11 @@ fun MedApp(
                                                                                         item
                                                                                 },
                                                                                 onEditSkipNote = {
-                                                                                    skipNoteEdit =
+                                                                                    skipDetailEdit =
+                                                                                        item to pageDate
+                                                                                },
+                                                                                onEditTakenTime = {
+                                                                                    takenTimeEdit =
                                                                                         item to pageDate
                                                                                 }
                                                                             )
@@ -1480,15 +1493,35 @@ fun MedApp(
         }
     }
 
-    skipNoteEdit?.let { (item, date) ->
-        SkipNoteEditorDialog(
-            initialNote = item.skipHistory[date]?.note,
-            onDismiss = { skipNoteEdit = null },
-            onConfirm = { note ->
-                viewModel.setSkipNote(item, date, note)
-                skipNoteEdit = null
-            }
-        )
+    skipDetailEdit?.let { (item, date) ->
+        val record = item.skipHistory[date]
+        if (record != null) {
+            SkipDetailEditorDialog(
+                date = date,
+                initialTime = record.time,
+                initialNote = record.note,
+                onDismiss = { skipDetailEdit = null },
+                onConfirm = { time, note ->
+                    viewModel.setSkipDetail(item, date, time, note)
+                    skipDetailEdit = null
+                }
+            )
+        }
+    }
+
+    takenTimeEdit?.let { (item, date) ->
+        val recorded = item.takenHistory[date]
+        if (recorded != null) {
+            DoseTimeEditorDialog(
+                date = date,
+                initialTime = recorded,
+                onDismiss = { takenTimeEdit = null },
+                onConfirm = { time ->
+                    viewModel.setTakenTime(item, date, time)
+                    takenTimeEdit = null
+                }
+            )
+        }
     }
 
     // A left swipe only queues the deletion; this dialog is the confirmation

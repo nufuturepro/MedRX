@@ -62,11 +62,9 @@ jobs:
             **Med Rx is a community fork of [Med by FeDeveloper95](https://github.com/FeDeveloper95/Med) (Apache 2.0), maintained by nukirk.**
 
             ## What's new
-            - **Refill where the stock is**: tap the "… left" badge on a med card (or its round arrow) to add a pack, see the new total before confirming, or set the count you actually have. The low-supply alert now carries a one-tap **Refill** action too
-            - **Ignored reminders come back**: a reminder left unanswered re-alerts at your snooze interval — up to your snooze limit when "convert repeated snoozes to a skip" is on, otherwise three times — and backing out of the full-screen alarm counts as a snooze instead of silently parking it. The re-alert shares the snooze tally, so the cap applies as configured
-            - **One stock count per medicine**: a medicine with two daily times used to keep a separate count on each slot, so takes lowered one card while a refill added a pack to every slot. Stock is now mirrored across the medication, so the number on every card is the bottle, and a refill adds exactly one pack
-            - **Snooze length on the full-screen alarm**: choose 5 / 10 / 15 / 30 minutes or a custom length for that reminder, right on the alarm screen. Back uses the same length; the saved default in Settings is untouched
-            - **Silent dismissal closed off**: snoozing or backing out of the full-screen alarm now clears its notification immediately, so nothing is left sitting unswipeable in the shade
+            - **Correct a recorded dose time**: tap the "Taken 12:10" line on a med card to fix the time it was logged. The dose stays taken, your stock count does not move, and the day's supply-ledger row follows the correction — so the history and the bottle agree again
+            - **Skip times are editable too**: the skip line on a card now opens the time alongside the note. The skip stays a skip and keeps its reason; changing the reason still means taking the skip off and recording it again
+            - **Late logs stop needing workarounds**: until now the only fix was un-taking the dose and taking it again, which stamped the current clock and left two wrong entries behind
 
             ## Med Rx features
             - Symptom logging with severity (mild / moderate / severe) and an editable date and time
@@ -82,7 +80,7 @@ jobs:
             - Download **MedRx-…-phone.apk** for your phone
             - Download **MedRx-…-wear.apk** for Wear OS (install on the watch)
             - Minimum Android 8.0 (API 26); watch requires Wear OS 3+
-            - Updating from Med Rx 2.2.4? Install straight over it — same app (`com.nukirk.medrx`), same signing key, all data stays. 2.2.5 is versionCode 27.
+            - Updating from 2.2.5? Install straight over it — same app (`com.nukirk.medrx`), same signing key, all data stays. 2.2.6 is versionCode 28.
             - Already have a stock count that looks wrong? Open the med's refill sheet once and use **Set exact count** — from then on the count stays in sync across every dose time.
             - Coming from the original Med app? Install alongside — your data migrates via in-app backup/restore or CSV export/import.
           files: |
@@ -116,7 +114,7 @@ jobs:
 
           **Med Rx is a community fork of [Med by FeDeveloper95](https://github.com/FeDeveloper95/Med) (Apache 2.0).**
 
-          New in this build: refilling from the stock badge (with a preview and a "set exact count" correction), reminders that re-alert when you ignore them instead of waiting silently, one shared stock count per medication so two daily times can no longer drift apart or be refilled twice, and a snooze-length picker on the full-screen alarm. Version 2.2.5 is versionCode 27, signed with the same key as 2.2.4, so installing straight over it keeps your data. If a supply count already looks wrong, open the refill sheet and set the exact count once. The full Med Rx feature set (dose skipping with clinical reasons, pre-skip planning, the supply ledger, PRN support, symptom logging, the skipped-dose doctor report) is unchanged. Details are in the release notes.
+          New in this build: the recorded time of a logged dose can be corrected where it is shown — tap the "Taken 12:10" line on a card, or the skip line for a skipped dose — and the supply ledger follows the correction without un-taking the dose or moving stock. Version 2.2.6 is versionCode 28, signed with the same key as 2.2.5, so installing straight over it keeps your data. The full Med Rx feature set (dose skipping with clinical reasons, pre-skip planning, the supply ledger, PRN support, symptom logging, the skipped-dose doctor report) is unchanged. Details are in the release notes.
 
           Questions or problems? Open an issue, or ask here in Discussions — every release gets a thread like this one.
           EOF

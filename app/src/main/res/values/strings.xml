@@ -186,6 +186,10 @@
     <string name="frequency_every_days">Every %1$d days</string>
     <string name="edit_time_desc">Edit time</string>
     <string name="status_taken_format">Taken %1$s%2$s</string>
+    <string name="dose_time_edit_title">Edit dose time</string>
+    <string name="dose_time_edit_help">This corrects the recorded time only. The dose stays taken and your stock count does not change.</string>
+    <string name="skip_edit_title">Edit skip</string>
+    <string name="skip_edit_help">This corrects the recorded time and note. To change the reason, take the skip off with the Skip button and record it again.</string>
     <string name="status_scheduled_format">Scheduled for %1$s</string>
 
     <string name="dynamic_theme_desc">Dynamic Theme</string>
@@ -469,7 +473,7 @@
     <string name="card_refill_desc">Add a refill to supply</string>
     <string name="tap_again_to_refill">Add %1$d %2$s to supply? Tap again to confirm</string>
     <string name="whatsnew_title">What\'s new in Med Rx</string>
-    <string name="whatsnew_body">New in this build:\n\n• Refill from the stock badge: tap \"30 tablets left\" to add a pack, preview the new total, or set the count you actually have\n• Reminders no longer wait quietly: an unanswered reminder re-alerts at your snooze interval (up to your snooze limit, or three times), and backing out of the full-screen alarm counts as a snooze\n• One stock count per medication — a medicine with two daily times can no longer drift apart or be refilled twice\n• Pick the snooze length on the full-screen alarm (5/10/15/30 min or your own); Back uses it too\n\nIf a count looks wrong, open the refill sheet and use \"Set exact count\" once.</string>
+    <string name="whatsnew_body">New in this build:\n\n• Fix a dose time: tap \"Taken 12:10\" on a med card to correct the recorded time. The dose stays taken and your stock count does not move\n• Skip details too: the skip line on a card edits its time as well as its note\n• The supply ledger follows the correction, so the history and the bottle agree again\n\nIf a dose was logged hours late, fix it on the card instead of un-taking and re-taking it.</string>
     <string name="whatsnew_community_hint">Questions or ideas? The Community button opens GitHub Discussions.</string>
     <string name="whatsnew_releases">Releases</string>
     <string name="whatsnew_community">Community</string>

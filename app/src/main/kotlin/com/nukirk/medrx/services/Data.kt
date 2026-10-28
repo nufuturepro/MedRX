@@ -26,6 +26,7 @@ import java.io.ObjectStreamClass
 import java.io.Serializable
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -170,6 +171,34 @@ fun MedData.withSkipNote(date: LocalDate, note: String?): MedData {
     if (record.note == cleaned) return this
     return copy(
         skipHistory = HashMap(skipHistory).apply { put(date, record.copy(note = cleaned)) }
+    )
+}
+
+/**
+ * [this] with the recorded time — and, in the same pass, the note — of
+ * [date]'s skip corrected.
+ *
+ * A skip time is as easy to record late as a take time (the reminder is often
+ * answered an hour later), and correcting it must not change what the record
+ * means: the skip stays a skip and keeps its reason. Stock is not involved. A
+ * future time is clamped to [now] for today, the same rule takes use. Returns
+ * [this] when there is no skip on [date] or nothing would change.
+ */
+fun MedData.withSkipDetail(
+    date: LocalDate,
+    time: LocalTime,
+    note: String?,
+    now: LocalDateTime = LocalDateTime.now()
+): MedData {
+    val record = skipHistory[date] ?: return this
+    val cleaned = note?.trim()?.ifEmpty { null }
+    val nowTime = now.toLocalTime()
+    val safeTime = if (date == now.toLocalDate() && time.isAfter(nowTime)) nowTime else time
+    if (record.time == safeTime && record.note == cleaned) return this
+    return copy(
+        skipHistory = HashMap(skipHistory).apply {
+            put(date, record.copy(time = safeTime, note = cleaned))
+        }
     )
 }
 
@@ -1544,19 +1573,42 @@ class MedViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Edits the note recorded with an existing skip.
+     * Corrects the recorded clock time of a dose that is already logged.
      *
-     * Only the note moves: the reason, the time and the dose's taken state stay
-     * as they were, and the alarm is left alone because a skipped slot is
-     * already resolved. Nothing is written when the note is unchanged, so an
-     * accidental Save does not churn the store.
+     * The dose stays taken and stock does not move, so nothing is re-scheduled
+     * and no snooze state is cleared — the alarm for a resolved dose is already
+     * gone. The supply ledger is shared by every dose slot of one medication,
+     * so the corrected row is mirrored to all of them.
      */
-    fun setSkipNote(item: MedData, date: LocalDate, note: String?) {
+    fun setTakenTime(item: MedData, date: LocalDate, newTime: LocalTime) {
+        if (item.type != ItemType.Medicine) return
+        if (date.isAfter(LocalDate.now())) return
+
+        val index = _items.indexOfFirst { it.id == item.id }
+        if (index == -1) return
+        val current = _items[index]
+        val updated = InventoryService.applyTakenTimeEdit(current, date, newTime)
+        if (updated == current) return
+
+        _items[index] = updated
+        SupplyGroup.mirror(_items, updated)
+        saveData()
+    }
+
+    /**
+     * Corrects the recorded time (and note) of a skip that is already logged.
+     *
+     * Only the record moves: the skip stays a skip, keeps its reason, and the
+     * alarm is left alone because a skipped slot is already resolved. Nothing
+     * is written when nothing changed, so an accidental Save does not churn the
+     * store.
+     */
+    fun setSkipDetail(item: MedData, date: LocalDate, newTime: LocalTime, note: String?) {
         if (item.type != ItemType.Medicine) return
 
         val index = _items.indexOfFirst { it.id == item.id }
         if (index == -1) return
-        val updated = _items[index].withSkipNote(date, note)
+        val updated = _items[index].withSkipDetail(date, newTime, note)
         if (updated == _items[index]) return
 
         _items[index] = updated
